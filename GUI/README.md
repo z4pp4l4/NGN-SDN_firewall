@@ -1,0 +1,1 @@
+This is the first attempt to a working GUI, please don't judge I'm just learning customtkinter 
