@@ -1,1 +1,7 @@
-This is the first attempt to a working GUI, please don't judge I'm just learning customtkinter 
+I added more functionality to the GUI, I still need to improve the visual appeal of it.
+
+To run the GUI please remember to have installed
+    -customtkinter
+    -pillow
+    -pylibpcap
+    
