@@ -1,0 +1,36 @@
+ip addr add 192.168.100.2/30 dev eth0
+ip link set eth0 up
+
+ip addr add 192.168.10.4/29 dev eth1
+ip link set eth1 up
+
+ip addr add 192.168.20.8/28 dev eth2
+ip link set eth2 up
+
+
+
+/usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
+
+ovs-ofctl add-flow s1 "priority=100,arp,actions=NORMAL"
+ovs-ofctl add-flow s1 "priority=100,icmp,actions=NORMAL"
+ovs-ofctl add-flow s1 "priority=0,actions=CONTROLLER"
+
+
+
+# bridge
+ovs-vsctl add-br s1
+#fail mode
+ovs-vsctl set-fail-mode s1 secure
+#data-plane ports
+ovs-vsctl add-port s1 eth1  #internal
+ovs-vsctl add-port s1 eth2  #external
+
+ovs-vsctl set bridge s1 protocols=[OpenFlow13]
+
+ovs-vsctl set-controller s1 tcp:192.168.100.1:6633
+
+ovs-vsctl set bridge s1 other-config:disable-in-band=true
+
+sysctl -w net.ipv4.ip_forward=1
+
+ip link set s1 up
