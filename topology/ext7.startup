@@ -1,0 +1,5 @@
+ip addr add 192.168.20.7/28 dev eth0
+route add default gw 192.168.20.8
+
+
+
