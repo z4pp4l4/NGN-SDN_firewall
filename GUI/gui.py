@@ -30,4 +30,5 @@ class App(customtkinter.CTk):
         subprocess.run(["./start_lab"], cwd="../topology/")
 
 app = App()
+
 app.mainloop()
