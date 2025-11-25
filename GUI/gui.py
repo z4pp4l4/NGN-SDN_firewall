@@ -1,7 +1,7 @@
 import customtkinter
 from overview import MyOverview
 from topology import MyTopologyFrame
-#from wireshark import PacketSnifferFrame
+from wireshark import PacketSnifferFrame
 import subprocess
 class App(customtkinter.CTk):
     def __init__(self):
@@ -23,11 +23,12 @@ class App(customtkinter.CTk):
         self.button = customtkinter.CTkButton(self, text="start simulation", command=self.button_callback)
         self.button.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
 
-        #self.sniffer_frame=PacketSnifferFrame(self, subnet="192.168.10.0/29")
-        #self.sniffer_frame.grid(row=4, column = 0, padx=10, pady=10, sticky = "nsew")
+        self.sniffer_frame=PacketSnifferFrame(self, subnet="192.168.10.0/29")
+        self.sniffer_frame.grid(row=4, column = 0, padx=10, pady=10, sticky = "nsew")
 
     def button_callback(self):
         subprocess.run(["./start_lab"], cwd="../topology/")
 
 app = App()
+
 app.mainloop()
