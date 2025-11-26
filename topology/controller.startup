@@ -1,6 +1,6 @@
 ip addr add 192.168.100.1/30 dev eth0
 
-ryu-manager firewalls/L3switch.py
+ryu-manager shared/firewall_L3.py
 
 
 
