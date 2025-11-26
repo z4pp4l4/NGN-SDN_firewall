@@ -30,7 +30,7 @@ class App(customtkinter.CTk):
         self.sniffer_frame.grid(row=3, column = 0, padx=10, pady=10, sticky = "nsew")
 
     def button_callback(self):
-        subprocess.run(["./start_lab.sh"], cwd="../topology/")
+        subprocess.run(["bash","./start-lab.sh"], cwd="../topology/")
 
 app = App()
 
