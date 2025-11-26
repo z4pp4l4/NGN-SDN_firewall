@@ -1,3 +1,4 @@
+#!/bin/bash
 kathara lstart
 
 sleep 1
