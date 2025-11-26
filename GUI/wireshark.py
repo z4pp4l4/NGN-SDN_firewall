@@ -20,7 +20,7 @@ class PacketSnifferFrame(ctk.CTkFrame):
         self.label.pack(pady=10)
 
         # Output box
-        self.output_box = ctk.CTkTextbox(self, width=700, height=400)
+        self.output_box = ctk.CTkTextbox(self, width=400, height=200)
         self.output_box.pack(padx=10, pady=10)
 
         # Start button
