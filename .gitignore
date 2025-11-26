@@ -1,4 +1,4 @@
-.venv/
+venv/
 __pycache__/
 GUI/__pycache__
 topology/__pycache__
