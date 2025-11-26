@@ -1,6 +1,5 @@
-.venv/
-<<<<<<< HEAD
+venv/
 __pycache__/
-=======
 GUI/__pycache__
->>>>>>> 1a25b55a9bb9c97d9cbd59e24ebb408b58c86a9f
+topology/__pycache__
+

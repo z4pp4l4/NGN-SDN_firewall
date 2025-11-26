@@ -19,3 +19,8 @@ TO DO LIST
 		○  ./start lab + gui + wireshark
 		○ The buttons that do stuff
     * The little info about hosts
+    
+    
+    
+to do 2
+preparare i scenarios degli attachi
