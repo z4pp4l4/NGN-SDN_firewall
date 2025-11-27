@@ -15,6 +15,9 @@ TARGET_PORT="2020"               # monitored port in firewall
 
 # 1. NORMAL BASELINE TRAFFIC
 echo "[STEP 1] Sending normal traffic..."
+kathara exec h1 -- nc -l -p 2020 -k &
+kathara exec h2 -- nc -l -p 2020 -k &
+sleep 2
 kathara exec h1 -- nc -zvw1 $TARGET_IP 2020 
 kathara exec h2 -- nc -zvw1 $TARGET_IP 2020 
 echo "[OK] Baseline traffic sent."
