@@ -8,6 +8,6 @@ ip addr add 192.168.100.1/30 dev A
 pip install ryu
 
 # Run your firewall app
-cd /share
-ryu-manager firewall_L3.py --verbose
+cd /shared
+ryu-manager firewall_config_2.py --verbose
 
