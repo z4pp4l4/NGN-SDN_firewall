@@ -15,15 +15,16 @@ TARGET_PORT="2020"               # monitored port in firewall
 
 # 1. NORMAL BASELINE TRAFFIC
 echo "[STEP 1] Sending normal traffic..."
-kathara exec h1 -- nc -zvw1 $TARGET_IP 2020 >/dev/null 2>&1
-kathara exec h2 -- nc -zvw1 $TARGET_IP 2020 >/dev/null 2>&1
+kathara exec h1 -- nc -zvw1 $TARGET_IP 2020 
+kathara exec h2 -- nc -zvw1 $TARGET_IP 2020 
 echo "[OK] Baseline traffic sent."
 echo
 
+#to hide the stderr / stdout => >/dev/null 2>&1
 # 2. SMALL ATTACK TEST (should NOT trigger firewall)
 echo "[STEP 2] Small burst test (should not be detected)..."
 for i in {1..10}; do
-  kathara exec ext1 -- hping3 -S -p $TARGET_PORT -c 1 $TARGET_IP >/dev/null 2>&1
+  kathara exec ext1 -- hping3 -S -p $TARGET_PORT --count 1 $TARGET_IP  
 done
 echo "[OK] Small test completed."
 echo
@@ -33,7 +34,7 @@ echo "[STEP 3] Launching DoS attack (should trigger firewall)..."
 kathara exec ext1 -- hping3 -S -p $TARGET_PORT -i u1000 --flood $TARGET_IP &
 HPING_PID=$!
 sleep 3
-kill $HPING_PID >/dev/null 2>&1
+kill $HPING_PID 
 echo "[OK] Flood completed."
 echo
 
@@ -48,8 +49,8 @@ fi
 echo
 
 # 5. WAIT FOR RULE TIMEOUT
-echo "[STEP 5] Waiting for firewall timeout (70 seconds)..."
-sleep 70
+echo "[STEP 5] Waiting for firewall timeout (10 seconds)..."
+sleep 10
 
 # 6. TEST THAT BLOCK IS REMOVED AFTER TIMEOUT
 echo "[STEP 6] Checking if attacker is unblocked after rule expiration..."
@@ -63,6 +64,5 @@ fi
 echo
 echo "-------------------------------------"
 echo "[INFO] DoS scenario test completed."
-
 
 
