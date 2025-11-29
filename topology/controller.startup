@@ -1,6 +1,13 @@
-ip addr add 192.168.100.1/30 dev eth0
+#!/bin/bash
 
-ryu-manager firewalls/L3switch.py
+# Bring up the control interface
+ip link set dev A up
+ip addr add 192.168.100.1/30 dev A
 
+# Install Ryu (only the first time)
+pip install ryu
 
+# Run your firewall app
+cd /shared
+ryu-manager firewall_config_2.py --verbose
 
