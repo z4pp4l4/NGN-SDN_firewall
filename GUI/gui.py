@@ -6,9 +6,14 @@ import subprocess
 import socket
 import threading
 import queue
+import scapy.all as scapy
+
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
+        ##########################################
+        self.listener_started = False
+        ######### ouss added###########
 
         self.packet_queue = queue.Queue()
         self.check_packet_queue()
@@ -41,18 +46,61 @@ class App(customtkinter.CTk):
         self.destroy()
     
     def button_callback(self):
-        subprocess.run(["bash","./start-lab.sh"], cwd="../topology/")
+        # 1. Start the lab
+        subprocess.run(["bash", "./start-lab.sh"], cwd="../topology/")
+
+        # 2. Ensure the host route exists (idempotent)
+        route = "192.168.70.0/29"
+        via = "172.17.0.3"
+
+        print("INFO: Checking if host route exists...")
+
+        # CHECK if the route is already present
+        existing = subprocess.run(
+            ["ip", "route", "show", route],
+            capture_output=True,
+            text=True
+        ).stdout
+
+        if via in existing:
+            print("INFO: Route already exists. Skipping 'ip route add'.")
+        else:
+            print("INFO: Route does not exist. Attempting to add it...")
+            try:
+                subprocess.run(
+                    ["sudo", "ip", "route", "add", route, "via", via],
+                    check=True,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                print("INFO: Host route added successfully.")
+            except subprocess.CalledProcessError as e:
+                print("ERROR: Failed to add host route.")
+                print("stderr:", e.stderr)
+                print(f"Please run manually: sudo ip route add {route} via {via}")
+
+        # 3. Start the listener thread
+        if not self.listener_started:
+            threading.Thread(target=self.packet_listener_thread, daemon=True).start()
+
+        # 4. Start the sniffer container client
         self.sniffer = subprocess.Popen(
             ["kathara", "exec", "s1", "--", "python3", "/shared/sniffer_switch.py"],
+            cwd="../topology/",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
         )
-        threading.Thread(target=self.packet_listener_thread, daemon=True).start()
+
+
 
     def packet_listener_thread(self):
+
+        self.listener_started = True
+
         server = socket.socket()
-        server.bind(("0.0.0.0", 5000))  
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("0.0.0.0", 5000))
         server.listen(1)
 
         print("Waiting for connection from switch sniffer...")
@@ -63,7 +111,11 @@ class App(customtkinter.CTk):
             data = conn.recv(4096)
             if not data:
                 break
-            self.packet_queue.put(data.decode(errors="ignore"))
+            pkt = scapy.Ether(data)
+            self.packet_queue.put(pkt.summary())
+        
+
+    
     def check_packet_queue(self):
         while not self.packet_queue.empty():
             pkt = self.packet_queue.get()

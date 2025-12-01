@@ -5,7 +5,6 @@ RUN apt-get update && apt-get install -y \
     git build-essential python3-dev libffi-dev libssl-dev libxml2-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Installs Python dependencies that Ryu requires
 RUN pip install --no-cache-dir \
     eventlet==0.31.1 \
     tinyrpc==1.0.4 \

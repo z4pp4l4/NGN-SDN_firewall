@@ -1,10 +1,21 @@
+from scapy.all import sniff
 import socket
-from pylibpcap.pcap import sniff
 
+HOST_IP = "172.17.0.1"
+PORT = 5000
+
+print("[SNIFFER] connecting to GUI...")
 sock = socket.socket()
-sock.connect(("10.0.2.2", 5000))
+sock.connect((HOST_IP, PORT))
+print("[SNIFFER] connected!")
 
-def handle(_, pkt):
-    sock.sendall(pkt + b"\n") 
+def send_packet(pkt):
+    try:
+        raw_bytes = bytes(pkt)
+        sock.sendall(raw_bytes + b"\n")
+    except Exception as e:
+        print("[SNIFFER] error sending packet:", e)
 
-sniff("eth0", prn=handle, count=-1)
+print("[SNIFFER] sniffing on eth1 + eth2")
+sniff(iface=["eth1", "eth2"], prn=send_packet, store=False)
+

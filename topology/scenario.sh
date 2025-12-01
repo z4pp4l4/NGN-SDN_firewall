@@ -13,13 +13,16 @@ ATTACKERS=("ext1" "ext2" "ext3" "ext4" "ext5" "ext6" "ext7")
 TARGET_IP="192.168.10.1"         # target inside internal subnet
 TARGET_PORT="2020"               # monitored port in firewall
 
+
+echo "[SETUP] Starting TCP listener on h1:2020 ..."
+kathara exec h1 -- sh -c "nohup nc -lk 2020 >/dev/null 2>&1 &"
+sleep 1
+
+
+
 # 1. NORMAL BASELINE TRAFFIC
 echo "[STEP 1] Sending normal traffic..."
-kathara exec h1 -- nc -l -p 2020 -k &
-kathara exec h2 -- nc -l -p 2020 -k &
-sleep 2
-kathara exec h1 -- nc -zvw1 $TARGET_IP 2020 
-kathara exec h2 -- nc -zvw1 $TARGET_IP 2020 
+kathara exec h1 -- nc -zvw1 192.168.10.1 2020 
 echo "[OK] Baseline traffic sent."
 echo
 
