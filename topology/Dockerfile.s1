@@ -1,0 +1,8 @@
+FROM kathara/sdn
+
+RUN apt-get update && apt-get install -y \
+    python3-pip python3-dev gcc libpcap-dev python3-venv \
+    && python3 -m pip install --break-system-packages scapy \
+    && rm -rf /var/lib/apt/lists/*
+
+
