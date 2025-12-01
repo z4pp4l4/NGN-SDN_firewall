@@ -42,31 +42,45 @@ class App(customtkinter.CTk):
     def on_close(self):
         subprocess.run(["bash", "./stop-lab.sh"], cwd="../topology/")
         self.destroy()
-    
     def button_callback(self):
         # 1. Start the lab
-        subprocess.run(["bash","./start-lab.sh"], cwd="../topology/")
-        
-        # 2. Add the route to the HOST OS to allow return traffic 
-        #    NOTE: This command will likely require a password prompt from 'sudo' 
-        #    and will block the GUI until entered, or you must run it manually.
-        try:
-            print("INFO: Attempting to add Host route for return traffic...")
-            # Use the verified IP 172.17.0.3
-            subprocess.run(["sudo", "ip", "route", "add", "192.168.70.0/29", "via", "172.17.0.3"], check=True)
-            print("INFO: Host route added successfully.")
-        except subprocess.CalledProcessError as e:
-            # Route already exists is a common error if the button is clicked twice
-            if "File exists" in e.output: 
-                print("INFO: Host route already exists.")
-            else:
-                print(f"ERROR: Failed to add host route. Please run the following command manually: sudo ip route add 192.168.70.0/29 via 172.17.0.3")
+        subprocess.run(["bash", "./start-lab.sh"], cwd="../topology/")
 
-        # 3. Start the listener thread 
+        # 2. Ensure the host route exists (idempotent)
+        route = "192.168.70.0/29"
+        via = "172.17.0.3"
+
+        print("INFO: Checking if host route exists...")
+
+        # CHECK if the route is already present
+        existing = subprocess.run(
+            ["ip", "route", "show", route],
+            capture_output=True,
+            text=True
+        ).stdout
+
+        if via in existing:
+            print("INFO: Route already exists. Skipping 'ip route add'.")
+        else:
+            print("INFO: Route does not exist. Attempting to add it...")
+            try:
+                subprocess.run(
+                    ["sudo", "ip", "route", "add", route, "via", via],
+                    check=True,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                print("INFO: Host route added successfully.")
+            except subprocess.CalledProcessError as e:
+                print("ERROR: Failed to add host route.")
+                print("stderr:", e.stderr)
+                print(f"Please run manually: sudo ip route add {route} via {via}")
+
+        # 3. Start the listener thread
         if not self.listener_started:
-             threading.Thread(target=self.packet_listener_thread, daemon=True).start()
+            threading.Thread(target=self.packet_listener_thread, daemon=True).start()
 
-        # 4. Start the sniffer client
+        # 4. Start the sniffer container client
         self.sniffer = subprocess.Popen(
             ["kathara", "exec", "s1", "--", "python3", "/shared/sniffer_switch.py"],
             cwd="../topology/",
