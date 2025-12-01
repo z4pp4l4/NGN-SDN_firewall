@@ -110,9 +110,8 @@ class App(customtkinter.CTk):
             data = conn.recv(4096)
             if not data:
                 break
-            pkt = scapy.Ether(data)
+            pkt=scapy.Ether(data)
             self.packet_queue.put(pkt.summary())
-        
 
     
     def check_packet_queue(self):
@@ -126,3 +125,25 @@ class App(customtkinter.CTk):
 app = App()
 
 app.mainloop()
+
+
+#AgP-[a7EPЮF9
+#1+`huP䟏IP@2FQ3PPP::E>z8P
+#fsAP͙
+#zgh:KvP	^KPm
+#) P
+#
+#C1P
+#A66PCwa
+#1)4ao&26XP`lUA79POPPJP
+#&n#iePQPP
+#c(PPPP
+#)gGkhPPPPPPԵPPP
+#3(vE/PPxPP#:fP
+#oOשaP}
+#9dP
+#>wtOP%P
+#2PPP`PPPtP
+#9>_CPPQPPEdP
+#}r\t9+KTPmP
+#GRNPPPP
