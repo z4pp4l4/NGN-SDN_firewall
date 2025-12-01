@@ -44,7 +44,6 @@ class App(customtkinter.CTk):
     def on_close(self):
         subprocess.run(["bash", "./stop-lab.sh"], cwd="../topology/")
         self.destroy()
-    
     def button_callback(self):
         # 1. Start the lab
         subprocess.run(["bash", "./start-lab.sh"], cwd="../topology/")
