@@ -1,0 +1,5 @@
+venv/
+GUI/venv/
+GUI/__pycache__/
+topology/shared/__pycache__/
+

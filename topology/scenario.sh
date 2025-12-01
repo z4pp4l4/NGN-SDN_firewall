@@ -13,10 +13,14 @@ ATTACKERS=("ext1" "ext2" "ext3" "ext4" "ext5" "ext6" "ext7")
 TARGET_IP="192.168.10.1"         # target inside internal subnet
 TARGET_PORT="2020"               # monitored port in firewall
 
+
+echo "[SETUP] Starting TCP listener on h1:2020 ..."
+kathara exec h1 -- sh -c "nohup nc -lk 2020 >/dev/null 2>&1 &"
+sleep 1
+
 # 1. NORMAL BASELINE TRAFFIC
 echo "[STEP 1] Sending normal traffic..."
-kathara exec h1 -- nc -zvw1 $TARGET_IP 2020 
-kathara exec h2 -- nc -zvw1 $TARGET_IP 2020 
+kathara exec h1 -- nc -zvw1 192.168.10.1 2020 
 echo "[OK] Baseline traffic sent."
 echo
 
@@ -30,11 +34,17 @@ echo "[OK] Small test completed."
 echo
 
 # 3. REAL DoS ATTACK (this SHOULD trigger firewall)
+# Sending 150+ packets in 10 seconds to exceed threshold of 100
 echo "[STEP 3] Launching DoS attack (should trigger firewall)..."
-kathara exec ext1 -- hping3 -S -p $TARGET_PORT -i u1000 --flood $TARGET_IP &
+echo "Running hping3 flood for 12 seconds to ensure detection..."
+kathara exec ext1 -- hping3 -S -p $TARGET_PORT --flood $TARGET_IP > /dev/null 2>&1 &
 HPING_PID=$!
-sleep 3
-kill $HPING_PID 
+
+# Let it run for 12 seconds to ensure we exceed 100 packets in the 10-second window
+sleep 12
+kill $HPING_PID 2>/dev/null
+wait $HPING_PID 2>/dev/null
+
 echo "[OK] Flood completed."
 echo
 
@@ -50,7 +60,7 @@ echo
 
 # 5. WAIT FOR RULE TIMEOUT
 echo "[STEP 5] Waiting for firewall timeout (10 seconds)..."
-sleep 10
+sleep 15
 
 # 6. TEST THAT BLOCK IS REMOVED AFTER TIMEOUT
 echo "[STEP 6] Checking if attacker is unblocked after rule expiration..."
