@@ -15,6 +15,8 @@ class App(customtkinter.CTk):
         self.listener_started = False
         ######### ouss added###########
 
+        self.open_popups = {}
+
         self.packet_queue = queue.Queue()
         self.check_packet_queue()
 
@@ -26,7 +28,7 @@ class App(customtkinter.CTk):
         values = ["firewall 1", "firewall 2", "firewall 3"]
         int_hosts = ["host  1", "host 2", "host 3"]
         ext_hosts = ["hack 1", "hack 2", "hack 3", "hack 4", "hack 5", "hack 6", "hack 7"]
-        self.topology_frame = MyTopologyFrame(self, title="Topology", values=values, int_hosts=int_hosts, ext_hosts=ext_hosts)
+        self.topology_frame = MyTopologyFrame(self, app_ref=self, title="Topology", int_hosts=int_hosts, ext_hosts=ext_hosts)
         self.topology_frame.grid(row=0, column=0, padx=10, pady=(10,0), sticky="nsew")
         self.radiobutton_frame = MyRadioButtonFrame(self, values=values)
         self.radiobutton_frame.grid(row=1, column=0, padx=10, pady=(10,0), sticky="nsew")
@@ -117,9 +119,37 @@ class App(customtkinter.CTk):
     def check_packet_queue(self):
         while not self.packet_queue.empty():
             pkt = self.packet_queue.get()
+
+            # ---------------------------------------------
+            # 1. Append packet to the main global log
+            # ---------------------------------------------
             self.log_frame.insert("end", pkt + "\n")
-            self.log_frame.see("end") 
+            self.log_frame.see("end")
+
+            # ---------------------------------------------
+            # 2. Extract source IP from packet summary
+            #    Scapy summary looks like:
+            #    "Ether / IP 192.168.10.3 > 192.168.20.4 ..."
+            # ---------------------------------------------
+            src_ip = None
+            parts = pkt.split()
+
+            # Find the first IPv4-looking token
+            for token in parts:
+                if token.count(".") == 3:  # simple IPv4 detection
+                    src_ip = token
+                    break
+
+            # ---------------------------------------------
+            # 3. Deliver packet message to the popup of that IP
+            # ---------------------------------------------
+            if src_ip in self.open_popups:
+                popup = self.open_popups[src_ip]
+                popup.append_message(pkt)
+
+        # Keep checking every 50ms
         self.after(50, self.check_packet_queue)
+
 
 
 app = App()
