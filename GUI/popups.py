@@ -76,3 +76,12 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         """Append host-specific messages."""
         self.host_log.insert("end", msg + "\n")
         self.host_log.see("end")
+    def set_block_info(self, duration, reason):
+        """Show a warning label that this IP is blocked."""
+        msg = f"⚠ BLOCKED ({reason.upper()}) - {duration}s"
+        self.block_label.configure(text=msg)
+        self.block_label.grid()  # make it visible
+
+    def clear_block_info(self):
+        """Hide the warning label."""
+        self.block_label.grid_remove()
