@@ -148,8 +148,18 @@ class App(customtkinter.CTk):
             data = conn.recv(4096)
             if not data:
                 break
-            pkt=scapy.Ether(data)
-            self.packet_queue.put(pkt.summary())
+            pkt = scapy.Ether(data)
+
+            # Extract IPs safely using Scapy
+            ip_layer = pkt.getlayer(scapy.IP)
+            if ip_layer:
+                src_ip = ip_layer.src
+                dst_ip = ip_layer.dst
+            else:
+                src_ip = None
+                dst_ip = None
+
+            self.packet_queue.put((pkt.summary(), src_ip, dst_ip))
     
     def blocked_ips_listener_thread(self):
 
@@ -169,18 +179,12 @@ class App(customtkinter.CTk):
             if not data:
                 break
 
-            pkt = scapy.Ether(data)
-
-            # Get IP layer if present
-            ip_layer = pkt.getlayer(scapy.IP)
-            if ip_layer:
-                src_ip = ip_layer.src
-                dst_ip = ip_layer.dst
-            else:
-                src_ip = None
-                dst_ip = None
-
-            self.packet_queue.put((pkt.summary(), src_ip, dst_ip))
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if line:
+                    # Push raw JSON string to firewall queue
+                    self.firewall_event_queue.put(line)
 
     
     def check_packet_queue(self):
