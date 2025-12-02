@@ -18,6 +18,19 @@ HOST_IP = "172.17.0.1"
 PORT = 5001
 
 
+def connect_to_gui():
+    sock = socket.socket()
+
+    while True:
+        try:
+            sock.connect((HOST_IP, PORT))
+            print("[FIREWALL] Connected to GUI")
+            return sock
+        except Exception as e:
+            print("[FIREWALL] GUI not ready, retrying...")
+            time.sleep(1)
+
+
 class SDNFirewall(app_manager.RyuApp):
 
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -28,12 +41,7 @@ class SDNFirewall(app_manager.RyuApp):
         self.blocked_ips = {}
 
         # GUI connection so that I can receive the list of blocked ip addresses
-        self.gui_sock = socket.socket()
-        try:
-            self.gui_sock.connect((HOST_IP, PORT))
-            self.logger.info("Connected to GUI at %s:%d", HOST_IP, PORT)
-        except Exception as e:
-            self.logger.error("Failed to connect to GUI: %s", e)
+        self.gui_sock = connect_to_gui()
         # ARP table: IP -> (MAC, port)
         self.arp_table = {}
         self.mac_to_port = {}

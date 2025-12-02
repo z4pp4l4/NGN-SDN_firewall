@@ -63,6 +63,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         # register this popup
         if self.ip:
             self.app_ref.open_popups[self.ip] = self
+            print(f"self.open_popups: {self.app_ref.open_popups}")
 
         # deregister on close
         self.protocol("WM_DELETE_WINDOW", self.on_close)
