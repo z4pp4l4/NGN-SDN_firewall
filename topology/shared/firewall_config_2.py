@@ -12,9 +12,24 @@ from ryu.ofproto import ether
 import ipaddress
 from collections import defaultdict, deque
 import time
-    ###################gio#########################
 import socket
 import json
+
+HOST_IP = "172.17.0.1"
+PORT = 5001
+
+
+def connect_to_gui():
+    sock = socket.socket()
+
+    while True:
+        try:
+            sock.connect((HOST_IP, PORT))
+            print("[FIREWALL] Connected to GUI")
+            return sock
+        except Exception as e:
+            print("[FIREWALL] GUI not ready, retrying...")
+            time.sleep(1)
 
 HOST_IP = "172.17.0.1"
 PORT = 5001
@@ -39,11 +54,11 @@ class SDNFirewall(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(SDNFirewall, self).__init__(*args, **kwargs)
-    ###################gio#########################
+
         self.blocked_ips = {}
+
         # GUI connection so that I can receive the list of blocked ip addresses
-        self.gui_sock = connect_to_gui() 
-    ############################################
+        self.gui_sock = connect_to_gui()
         # ARP table: IP -> (MAC, port)
         self.arp_table = {}
         self.mac_to_port = {}
@@ -113,12 +128,21 @@ class SDNFirewall(app_manager.RyuApp):
         if duration is None:
             duration = self.dos_block_duration
 
+    def block_ip(self, src_ip, duration=60, reason="manual"):
+        """Block an IP for specified duration (seconds)."""
         self.blocked_ips[src_ip] = time.time() + duration
         self.add_drop_flow(datapath, src_ip, duration)
         self.logger.warning("BLOCKED IP: %s for %d seconds", src_ip, duration)
-        ###################gio#########################
-        self.gui_sock.sendall((json.dumps(event) + "\n").encode()) 
-        ############################################
+        try:
+            event = {
+            "type": "block",
+            "ip": src_ip,
+            "duration": duration,
+            "reason": reason
+            }
+            self.gui_sock.sendall((json.dumps(event) + "\n").encode())
+        except Exception as e:
+            self.logger.error("Failed to notify GUI about block: %s", e)
 
     def is_ip_blocked(self, src_ip):
         """Check if IP is currently blocked"""
@@ -159,10 +183,13 @@ class SDNFirewall(app_manager.RyuApp):
 
         history.append(current_time)
 
-        if len(history) > self.dos_threshold:
-            self.logger.warning("DoS DETECTED from %s: %d packets in %d seconds",
-                                src_ip, len(history), self.dos_window)
-            self.block_ip(datapath, src_ip)  # use default self.dos_block_duration=10
+        if len(self.packet_history[flow_key]) > self.dos_threshold:
+            self.logger.warning(
+                "DoS DETECTED: %s -> %s:%s (%d packets in %d seconds)",
+                src_ip, dst_ip, dst_port,
+                len(self.packet_history[flow_key]), self.dos_window
+            )
+            self.block_ip(src_ip, duration=self.dos_block_duration, reason="dos")
             return True
         return False
 
@@ -181,9 +208,13 @@ class SDNFirewall(app_manager.RyuApp):
         tracking["ports"].add(dst_port)
 
         if len(tracking["ports"]) >= self.port_scan_threshold:
-            self.logger.warning("PORT SCAN DETECTED: %s scanning %d unique ports",
-                              src_ip, len(tracking["ports"]))
-            self.block_ip(datapath, src_ip, duration=180)
+            self.logger.warning(
+                "PORT SCAN DETECTED: %s scanning %d unique ports in %d seconds",
+                src_ip, len(tracking["ports"]), self.port_scan_window
+            )
+            # Use both temporary block AND permanent blacklist so this helper is used
+            self.block_ip(src_ip, duration=self.port_scan_block_duration, reason="port_scan")
+            self.add_to_blacklist(src_ip)
             return True
         return False
 
