@@ -62,6 +62,27 @@ class MyTopologyFrame(customtkinter.CTkFrame):
 
 
     def on_click(self, value):
+        ip = None
+    
+        # compute IP the same way the popup class does
+        parts = value.split()
+        cat = parts[0]
+    
+        if cat == "host":
+            ip = f"192.168.10.{int(parts[1])}"
+        elif cat == "controller":
+            ip = "192.168.100.1"
+        elif cat != "switch":  # external host
+            ip = f"192.168.20.{int(parts[1])}"
+    
+        # if popup exists already → focus it
+        if ip and ip in self.app_ref.open_popups:
+            popup = self.app_ref.open_popups[ip]
+            popup.lift()
+            popup.focus_force()
+            return
+    
+        # otherwise create a new popup
         ToplevelWindow(self, value, self.app_ref)
 
 

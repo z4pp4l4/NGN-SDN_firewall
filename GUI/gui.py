@@ -19,6 +19,9 @@ class App(customtkinter.CTk):
 
         self.open_popups = {}
 
+        self.packet_history = {}
+        self.block_history = {}
+
         self.packet_queue = queue.Queue()
         self.check_packet_queue()
 
@@ -56,61 +59,35 @@ class App(customtkinter.CTk):
         subprocess.run(["bash", "./start-lab.sh"], cwd="../topology/")
 
         # 2. Ensure the host route exists (idempotent)
-        route_sniffer = "192.168.70.0/29"
-        route_firewall = "192.168.100.0/30"
+        route = "192.168.70.0/29"
         via = "172.17.0.3"
 
-        print("INFO: Checking if host route_sniffer exists...")
+        print("INFO: Checking if host route exists...")
 
         # CHECK if the route_sniffer is already present
         existing = subprocess.run(
-            ["ip", "route", "show", route_sniffer],
+            ["ip", "route", "show", route],
             capture_output=True,
             text=True
         ).stdout
 
         if via in existing:
-            print("INFO: route_sniffer already exists. Skipping 'ip route_sniffer add'.")
+            print("INFO: host route already exists. Skipping 'ip route_sniffer add'.")
         else:
-            print("INFO: route_sniffer does not exist. Attempting to add it...")
+            print("INFO: route does not exist. Attempting to add it...")
             try:
                 subprocess.run(
-                    ["sudo", "ip", "route", "add", route_sniffer, "via", via],
+                    ["sudo", "ip", "route", "add", route, "via", via],
                     check=True,
                     stderr=subprocess.PIPE,
                     text=True
                 )
-                print("INFO: Host route_sniffer added successfully.")
+                print("INFO: Host route added successfully.")
             except subprocess.CalledProcessError as e:
-                print("ERROR: Failed to add host route_sniffer.")
+                print("ERROR: Failed to add host route.")
                 print("stderr:", e.stderr)
-                print(f"Please run manually: sudo ip route add {route_sniffer} via {via}")
+                print(f"Please run manually: sudo ip route add {route} via {via}")
 
-        # CHECK if route_firewall is already present
-        print("INFO: Checking if host route_firewall exists...")
-
-        existing_firewall = subprocess.run(
-            ["ip", "route", "show", route_firewall],
-            capture_output=True,
-            text=True
-        ).stdout
-
-        if via in existing_firewall:
-            print("INFO: route_firewall already exists. Skipping 'ip route_firewall add'.")
-        else:
-            print("INFO: route_firewall does not exist. Attempting to add it...")
-            try:
-                subprocess.run(
-                    ["sudo", "ip", "route", "add", route_firewall, "via", via],
-                    check=True,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                print("INFO: Host route_firewall added successfully.")
-            except subprocess.CalledProcessError as e:
-                print("ERROR: Failed to add host route_firewall.")
-                print("stderr:", e.stderr)
-                print(f"Please run manually: sudo ip route add {route_firewall} via {via}")
 
         # 3. Start the listener thread for the switch
         if not self.listener_started:
@@ -128,9 +105,23 @@ class App(customtkinter.CTk):
             stderr=subprocess.PIPE,
             text=True
         )
+    def register_popup(self, ip, popup_window):
+        """Call this when creating/opening a popup for a given IP."""
+        self.open_popups[ip] = popup_window
 
+        # Replay stored packet history into the newly opened popup
+        for msg in self.packet_history.get(ip, []):
+            popup_window.append_message(msg)
 
+        # Replay stored firewall blocks
+        for duration, reason in self.block_history.get(ip, []):
+            popup_window.set_block_info(duration, reason)
 
+    def unregister_popup(self, ip):
+        """Call this when closing a popup for a given IP."""
+        if ip in self.open_popups:
+            del self.open_popups[ip]
+    
     def packet_listener_thread(self):
 
         self.listener_started = True
@@ -186,24 +177,34 @@ class App(customtkinter.CTk):
                     # Push raw JSON string to firewall queue
                     self.firewall_event_queue.put(line)
 
-    
     def check_packet_queue(self):
         while not self.packet_queue.empty():
-            summary, src_ip, _ = self.packet_queue.get()
+                summary, src_ip, _ = self.packet_queue.get()
 
-            self.log_frame.insert("end", summary + "\n")
-            self.log_frame.see("end")
+                self.log_frame.insert("end", summary + "\n")
+                self.log_frame.see("end")
 
-            if src_ip in self.open_popups:
-                popup = self.open_popups[src_ip]
-                popup.append_message(summary)
+                if src_ip:
+                    # Always store in history, regardless of popup being open
+                    if src_ip not in self.packet_history:
+                        self.packet_history[src_ip] = []
+                    self.packet_history[src_ip].append(summary)
 
-        # Keep checking every 50ms
+                    # Cap history length to avoid unlimited growth
+                    if len(self.packet_history[src_ip]) > 500:
+                        self.packet_history[src_ip] = self.packet_history[src_ip][-500:]
+
+                    # If popup is open, update it live (maybe redundant)
+                    if src_ip in self.open_popups:
+                        popup = self.open_popups[src_ip]
+                        popup.append_message(summary)
+
         self.after(50, self.check_packet_queue)
     def check_firewall_queue(self):
         while not self.firewall_event_queue.empty():
             raw = self.firewall_event_queue.get()
             event = json.loads(raw)
+            print("Received firewall event:", event)
 
             if event["type"] == "block":
                 ip = event["ip"]
@@ -211,6 +212,18 @@ class App(customtkinter.CTk):
                 reason = event["reason"]
 
                 self.scrollable_checkbox_frame.add_blocked_ip(ip, duration, reason)
+                # Always store in history
+                if ip not in self.block_history:
+                    self.block_history[ip] = []
+                self.block_history[ip].append((duration, reason))
+
+                # Keep history bounded to last 100 entries
+                if len(self.block_history[ip]) > 100:
+                    self.block_history[ip] = self.block_history[ip][-100:]
+
+                # If popup is open, update it (maybe redundant)
+                if ip in self.open_popups:
+                    self.open_popups[ip].set_block_info(duration, reason)
 
                 if ip in self.open_popups:
                     self.open_popups[ip].set_block_info(duration, reason)
