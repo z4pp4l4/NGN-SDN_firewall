@@ -8,12 +8,14 @@ import threading
 import queue
 import scapy.all as scapy
 import json
+import json
 
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
         ##########################################
         self.listener_started = False
+        self.listener_started_firewall = False
         self.listener_started_firewall = False
         ######### ouss added###########
 
@@ -24,6 +26,9 @@ class App(customtkinter.CTk):
 
         self.packet_queue = queue.Queue()
         self.check_packet_queue()
+
+        self.firewall_event_queue = queue.Queue()
+        self.check_firewall_queue()
 
         self.firewall_event_queue = queue.Queue()
         self.check_firewall_queue()
@@ -59,14 +64,15 @@ class App(customtkinter.CTk):
         subprocess.run(["bash", "./start-lab.sh"], cwd="../topology/")
 
         # 2. Ensure the host route exists (idempotent)
-        route = "192.168.70.0/29"
+        route_sniffer = "192.168.70.0/29"
+        route_firewall = "192.168.100.0/30"
         via = "172.17.0.3"
 
-        print("INFO: Checking if host route exists...")
+        print("INFO: Checking if host route_sniffer exists...")
 
         # CHECK if the route_sniffer is already present
         existing = subprocess.run(
-            ["ip", "route", "show", route],
+            ["ip", "route", "show", route_sniffer],
             capture_output=True,
             text=True
         ).stdout
@@ -77,16 +83,16 @@ class App(customtkinter.CTk):
             print("INFO: route does not exist. Attempting to add it...")
             try:
                 subprocess.run(
-                    ["sudo", "ip", "route", "add", route, "via", via],
+                    ["sudo", "ip", "route", "add", route_sniffer, "via", via],
                     check=True,
                     stderr=subprocess.PIPE,
                     text=True
                 )
-                print("INFO: Host route added successfully.")
+                print("INFO: Host route_sniffer added successfully.")
             except subprocess.CalledProcessError as e:
-                print("ERROR: Failed to add host route.")
+                print("ERROR: Failed to add host route_sniffer.")
                 print("stderr:", e.stderr)
-                print(f"Please run manually: sudo ip route add {route} via {via}")
+                print(f"Please run manually: sudo ip route add {route_sniffer} via {via}")
 
 
         # 3. Start the listener thread for the switch
@@ -177,6 +183,42 @@ class App(customtkinter.CTk):
                     # Push raw JSON string to firewall queue
                     self.firewall_event_queue.put(line)
 
+            # Extract IPs safely using Scapy
+            ip_layer = pkt.getlayer(scapy.IP)
+            if ip_layer:
+                src_ip = ip_layer.src
+                dst_ip = ip_layer.dst
+            else:
+                src_ip = None
+                dst_ip = None
+
+            self.packet_queue.put((pkt.summary(), src_ip, dst_ip))
+    
+    def blocked_ips_listener_thread(self):
+
+        self.listener_started_firewall = True
+
+        server = socket.socket()
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("0.0.0.0", 5001))
+        server.listen(1)
+
+        print("Waiting for firewall connection...")
+        conn, _ = server.accept()
+        print("Firewall connected.")
+
+        while True:
+            data = conn.recv(4096)
+            if not data:
+                break
+
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if line:
+                    # Push raw JSON string to firewall queue
+                    self.firewall_event_queue.put(line)
+
     def check_packet_queue(self):
         while not self.packet_queue.empty():
                 summary, src_ip, _ = self.packet_queue.get()
@@ -204,7 +246,6 @@ class App(customtkinter.CTk):
         while not self.firewall_event_queue.empty():
             raw = self.firewall_event_queue.get()
             event = json.loads(raw)
-            print("Received firewall event:", event)
 
             if event["type"] == "block":
                 ip = event["ip"]

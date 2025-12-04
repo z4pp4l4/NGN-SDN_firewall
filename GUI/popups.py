@@ -1,6 +1,4 @@
 import customtkinter
-import customtkinter
-
 class ToplevelWindow(customtkinter.CTkToplevel):
     def __init__(self, master, value, app_ref):
         super().__init__(master)
