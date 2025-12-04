@@ -52,12 +52,12 @@ class SDNFirewall(app_manager.RyuApp):
         self.interfaces = {
             1: {  # eth1 = port 1
                 "ip": ipaddress.ip_address("192.168.10.4"),
-                "mac": "0a:b3:e7:ec:f4:3f"
+                "mac": "0a:b3:e7:ec:f4:3f",
                 "net": ipaddress.ip_network("192.168.10.0/29")
             },
             2: {  # eth2 = port 2
                 "ip": ipaddress.ip_address("192.168.20.8"),
-                "mac": "52:98:79:8f:df:e0"
+                "mac": "52:98:79:8f:df:e0",
                 "net": ipaddress.ip_network("192.168.20.0/28")
             }
         }
@@ -130,7 +130,7 @@ class SDNFirewall(app_manager.RyuApp):
                 del self.blocked_ips[src_ip]
         return False
     ###################gio#########################
-     def add_to_blacklist(self, src_ip):
+    def add_to_blacklist(self, src_ip):
         """Permanently blacklist an IP."""
         self.blacklist.add(src_ip)
         self.logger.warning("BLACKLISTED IP: %s (permanent)", src_ip)
