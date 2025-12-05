@@ -148,8 +148,18 @@ class App(customtkinter.CTk):
             data = conn.recv(4096)
             if not data:
                 break
-            pkt=scapy.Ether(data)
-            self.packet_queue.put(pkt.summary())
+            pkt = scapy.Ether(data)
+
+            # Extract IPs safely using Scapy
+            ip_layer = pkt.getlayer(scapy.IP)
+            if ip_layer:
+                src_ip = ip_layer.src
+                dst_ip = ip_layer.dst
+            else:
+                src_ip = None
+                dst_ip = None
+
+            self.packet_queue.put((pkt.summary(), src_ip, dst_ip))
     
     def blocked_ips_listener_thread(self):
 
@@ -164,49 +174,29 @@ class App(customtkinter.CTk):
         conn, _ = server.accept()
         print("Firewall connected.")
 
-        buffer = ""
         while True:
             data = conn.recv(4096)
             if not data:
                 break
 
-            buffer += data.decode()
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
-                if line.strip():
-                    self.firewall_event_queue.put(line.strip())
+                line = line.strip()
+                if line:
+                    # Push raw JSON string to firewall queue
+                    self.firewall_event_queue.put(line)
 
     
     def check_packet_queue(self):
         while not self.packet_queue.empty():
-            pkt = self.packet_queue.get()
+            summary, src_ip, _ = self.packet_queue.get()
 
-            # ---------------------------------------------
-            # 1. Append packet to the main global log
-            # ---------------------------------------------
-            self.log_frame.insert("end", pkt + "\n")
+            self.log_frame.insert("end", summary + "\n")
             self.log_frame.see("end")
 
-            # ---------------------------------------------
-            # 2. Extract source IP from packet summary
-            #    Scapy summary looks like:
-            #    "Ether / IP 192.168.10.3 > 192.168.20.4 ..."
-            # ---------------------------------------------
-            src_ip = None
-            parts = pkt.split()
-
-            # Find the first IPv4-looking token
-            for token in parts:
-                if token.count(".") == 3:  # simple IPv4 detection
-                    src_ip = token
-                    break
-
-            # ---------------------------------------------
-            # 3. Deliver packet message to the popup of that IP
-            # ---------------------------------------------
             if src_ip in self.open_popups:
                 popup = self.open_popups[src_ip]
-                popup.append_message(pkt)
+                popup.append_message(summary)
 
         # Keep checking every 50ms
         self.after(50, self.check_packet_queue)

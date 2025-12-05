@@ -1,0 +1,29 @@
+FROM python:3.8-slim
+
+# Install OS dependencies
+RUN apt-get update && apt-get install -y  \
+    git build-essential python3-dev libffi-dev libssl-dev libxml2-dev \
+    iproute2 iputils-ping net-tools procps\
+    && rm -rf /var/lib/apt/lists/*
+
+# Install compatible versions of dependencies
+RUN pip install --no-cache-dir \
+    setuptools==58.0.0 \
+    eventlet==0.30.2 \
+    greenlet==1.1.2 \
+    dnspython==1.16.0 \
+    ryu==4.34 \
+    tinyrpc==1.0.4 \
+    packaging==20.9 \
+    msgpack==1.0.3 \
+    webob==1.8.7 \
+    ovs==2.17.1 \
+    routes==2.5.1 \
+    repoze.lru==0.7 \
+    netaddr==0.8.0
+
+EXPOSE 6633
+WORKDIR /app
+
+# Copy the shared directory with your Ryu applications
+COPY shared/ /app/shared/
