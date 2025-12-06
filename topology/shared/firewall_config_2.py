@@ -22,34 +22,6 @@ HOST_IP = "172.17.0.1"
 PORT = 5001
 
 
-def connect_to_gui(max_retries=3, retry_delay=1):
-    sock = socket.socket()
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            sock.connect((HOST_IP, PORT))
-            print(f"[FIREWALL] Connected to GUI (attempt {attempt})")
-            return sock
-        except Exception as e:
-            print(f"[FIREWALL] GUI not ready (attempt {attempt}/{max_retries})...")
-            time.sleep(retry_delay)
-
-    print("[FIREWALL] GUI not reachable, continuing WITHOUT GUI connection.")
-    return None
-############################################
-
-def connect_to_gui():
-    sock = socket.socket()
-
-    while True:
-        try:
-            sock.connect((HOST_IP, PORT))
-            print("[FIREWALL] Connected to GUI")
-            return sock
-        except Exception as e:
-            print("[FIREWALL] GUI not ready, retrying...")
-            time.sleep(1)
-
 HOST_IP = "172.17.0.1"
 PORT = 5001
 
@@ -106,7 +78,6 @@ class SDNFirewall(app_manager.RyuApp):
             }
         }
         self.dos_block_duration=10
-        self.dos_block_duration=10
         # DoS detection: track packet rates per (src_ip, dst_ip, dst_port)
         self.packet_history = defaultdict(deque)
         self.dos_threshold = 10  # packets per window
@@ -117,12 +88,6 @@ class SDNFirewall(app_manager.RyuApp):
         self.port_scan_threshold = 10
         self.port_scan_window = 30
 
-    def add_flow(self, datapath, priority, match, actions, buffer_id=None, idle_timeout=0, hard_timeout=0):
-        """Add flow with optional timeout"""
-        # Port scan detection
-        self.port_scan_tracking = defaultdict(lambda: {"ports": set(), "first_time": time.time()})
-        self.port_scan_threshold = 10
-        self.port_scan_window = 30
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None, idle_timeout=0, hard_timeout=0):
         """Add flow with optional timeout"""
@@ -266,9 +231,6 @@ class SDNFirewall(app_manager.RyuApp):
 
         return False
 
-
-    def detect_port_scan(self, datapath, src_ip, dst_port):
-        """Detect port scans"""
 
     def detect_port_scan(self, datapath, src_ip, dst_port):
         """Detect port scans"""
