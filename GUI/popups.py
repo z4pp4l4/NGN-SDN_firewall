@@ -3,24 +3,30 @@ class ToplevelWindow(customtkinter.CTkToplevel):
     def __init__(self, master, value, app_ref):
         super().__init__(master)
 
-        self.app_ref = app_ref     # reference back to App
+        self.app_ref = app_ref
         self.value = value
         self.geometry("400x300")
         self.title(value)
         self.resizable(False, False)
 
-        # ---- Outer Layout ----
+        # ---- Layout ----
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
 
         # ---- Info frame ----
         info_frame = customtkinter.CTkFrame(self)
         info_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
 
-        # ---- Log frame for this host ----
-        self.host_log = customtkinter.CTkTextbox(self, height=120)
-        self.host_log.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+        # ---- Block label (hidden by default) ----
+        self.block_label = customtkinter.CTkLabel(self, text="", text_color="red")
+        self.block_label.grid(row=1, column=0, padx=10, pady=(0,5), sticky="ew")
+        self.block_label.grid_remove()
 
+        # ---- Log box ----
+        self.host_log = customtkinter.CTkTextbox(self, height=120)
+        self.host_log.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+
+        # ---- Determine host IP/MAC ----
         value_cat = value.split()[0]
 
         if value_cat == "host":
@@ -43,7 +49,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
             customtkinter.CTkLabel(info_frame, text=self.ip).grid(row=0, column=1, sticky="w")
 
         elif value_cat == "switch":
-            self.ip = None   # switch has multiple IPs — skip filtering
+            self.ip = None
             customtkinter.CTkLabel(info_frame, text="Switch").grid(row=0, column=0, sticky="w")
 
         else:   # external host
@@ -60,28 +66,26 @@ class ToplevelWindow(customtkinter.CTkToplevel):
             customtkinter.CTkLabel(info_frame, text="MAC:").grid(row=1, column=0, sticky="w")
             customtkinter.CTkLabel(info_frame, text=self.mac).grid(row=1, column=1, sticky="w")
 
-        # register this popup
+        # ---- Register popup with the main App ----
         if self.ip:
-            self.app_ref.open_popups[self.ip] = self
+            self.app_ref.register_popup(self.ip, self)
 
-        # deregister on close
+        # ---- Close handler ----
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def on_close(self):
-        if self.ip and self.ip in self.app_ref.open_popups:
-            del self.app_ref.open_popups[self.ip]
+        if self.ip:
+            self.app_ref.unregister_popup(self.ip)
         self.destroy()
 
     def append_message(self, msg):
-        """Append host-specific messages."""
         self.host_log.insert("end", msg + "\n")
         self.host_log.see("end")
+
     def set_block_info(self, duration, reason):
-        """Show a warning label that this IP is blocked."""
         msg = f"⚠ BLOCKED ({reason.upper()}) - {duration}s"
         self.block_label.configure(text=msg)
-        self.block_label.grid()  # make it visible
+        self.block_label.grid()  # show label
 
     def clear_block_info(self):
-        """Hide the warning label."""
         self.block_label.grid_remove()

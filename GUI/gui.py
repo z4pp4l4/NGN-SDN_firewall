@@ -8,6 +8,8 @@ import threading
 import queue
 import scapy.all as scapy
 import json
+import base64
+
 
 class App(customtkinter.CTk):
     def __init__(self):
@@ -15,12 +17,19 @@ class App(customtkinter.CTk):
         ##########################################
         self.listener_started = False
         self.listener_started_firewall = False
+        self.listener_started_firewall = False
         ######### ouss added###########
 
         self.open_popups = {}
 
+        self.packet_history = {}
+        self.block_history = {}
+
         self.packet_queue = queue.Queue()
         self.check_packet_queue()
+
+        self.firewall_event_queue = queue.Queue()
+        self.check_firewall_queue()
 
         self.firewall_event_queue = queue.Queue()
         self.check_firewall_queue()
@@ -70,9 +79,9 @@ class App(customtkinter.CTk):
         ).stdout
 
         if via in existing:
-            print("INFO: route_sniffer already exists. Skipping 'ip route_sniffer add'.")
+            print("INFO: host route already exists. Skipping 'ip route_sniffer add'.")
         else:
-            print("INFO: route_sniffer does not exist. Attempting to add it...")
+            print("INFO: route does not exist. Attempting to add it...")
             try:
                 subprocess.run(
                     ["sudo", "ip", "route", "add", route_sniffer, "via", via],
@@ -86,31 +95,6 @@ class App(customtkinter.CTk):
                 print("stderr:", e.stderr)
                 print(f"Please run manually: sudo ip route add {route_sniffer} via {via}")
 
-        # CHECK if route_firewall is already present
-        print("INFO: Checking if host route_firewall exists...")
-
-        existing_firewall = subprocess.run(
-            ["ip", "route", "show", route_firewall],
-            capture_output=True,
-            text=True
-        ).stdout
-
-        if via in existing_firewall:
-            print("INFO: route_firewall already exists. Skipping 'ip route_firewall add'.")
-        else:
-            print("INFO: route_firewall does not exist. Attempting to add it...")
-            try:
-                subprocess.run(
-                    ["sudo", "ip", "route", "add", route_firewall, "via", via],
-                    check=True,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                print("INFO: Host route_firewall added successfully.")
-            except subprocess.CalledProcessError as e:
-                print("ERROR: Failed to add host route_firewall.")
-                print("stderr:", e.stderr)
-                print(f"Please run manually: sudo ip route add {route_firewall} via {via}")
 
         # 3. Start the listener thread for the switch
         if not self.listener_started:
@@ -128,7 +112,23 @@ class App(customtkinter.CTk):
             stderr=subprocess.PIPE,
             text=True
         )
+    def register_popup(self, ip, popup_window):
+        """Call this when creating/opening a popup for a given IP."""
+        self.open_popups[ip] = popup_window
 
+        # Replay stored packet history into the newly opened popup
+        for msg in self.packet_history.get(ip, []):
+            popup_window.append_message(msg)
+
+        # Replay stored firewall blocks
+        for duration, reason in self.block_history.get(ip, []):
+            popup_window.set_block_info(duration, reason)
+
+    def unregister_popup(self, ip):
+        """Call this when closing a popup for a given IP."""
+        if ip in self.open_popups:
+            del self.open_popups[ip]
+    
 
 
     def packet_listener_thread(self):
@@ -144,13 +144,33 @@ class App(customtkinter.CTk):
         conn, _ = server.accept()
         print("Sniffer is connected")
 
+        buffer = ""
+
         while True:
-            data = conn.recv(4096)
+            data = conn.recv(4096).decode()
             if not data:
                 break
-            pkt=scapy.Ether(data)
-            self.packet_queue.put(pkt.summary())
-    
+
+            buffer += data
+
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                if not line.strip():
+                    continue
+
+                try:
+                    raw = base64.b64decode(line)
+                    pkt = scapy.Ether(raw)
+                except Exception as e:
+                    print("Decode error:", e)
+                    continue
+
+                ip_layer = pkt.getlayer(scapy.IP)
+                src_ip = ip_layer.src if ip_layer else None
+                dst_ip = ip_layer.dst if ip_layer else None
+
+                self.packet_queue.put((pkt.summary(), src_ip, dst_ip))
+
     def blocked_ips_listener_thread(self):
 
         self.listener_started_firewall = True
@@ -165,50 +185,41 @@ class App(customtkinter.CTk):
         print("Firewall connected.")
 
         buffer = ""
+
         while True:
-            data = conn.recv(4096)
+            data = conn.recv(4096).decode()
             if not data:
                 break
 
-            buffer += data.decode()
+            buffer += data
+
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 if line.strip():
                     self.firewall_event_queue.put(line.strip())
 
-    
     def check_packet_queue(self):
         while not self.packet_queue.empty():
-            pkt = self.packet_queue.get()
+                summary, src_ip, _ = self.packet_queue.get()
 
-            # ---------------------------------------------
-            # 1. Append packet to the main global log
-            # ---------------------------------------------
-            self.log_frame.insert("end", pkt + "\n")
-            self.log_frame.see("end")
+                self.log_frame.insert("end", summary + "\n")
+                self.log_frame.see("end")
 
-            # ---------------------------------------------
-            # 2. Extract source IP from packet summary
-            #    Scapy summary looks like:
-            #    "Ether / IP 192.168.10.3 > 192.168.20.4 ..."
-            # ---------------------------------------------
-            src_ip = None
-            parts = pkt.split()
+                if src_ip:
+                    # Always store in history, regardless of popup being open
+                    if src_ip not in self.packet_history:
+                        self.packet_history[src_ip] = []
+                    self.packet_history[src_ip].append(summary)
 
-            # Find the first IPv4-looking token
-            for token in parts:
-                if token.count(".") == 3:  # simple IPv4 detection
-                    src_ip = token
-                    break
+                    # Cap history length to avoid unlimited growth
+                    if len(self.packet_history[src_ip]) > 500:
+                        self.packet_history[src_ip] = self.packet_history[src_ip][-500:]
 
-            # ---------------------------------------------
-            # 3. Deliver packet message to the popup of that IP
-            # ---------------------------------------------
-            if src_ip in self.open_popups:
-                popup = self.open_popups[src_ip]
-                popup.append_message(pkt)
+                    # If popup is open, update it live (maybe redundant)
+                    if src_ip in self.open_popups:
+                        popup = self.open_popups[src_ip]
+                        popup.append_message(summary)
 
-        # Keep checking every 50ms
         self.after(50, self.check_packet_queue)
     def check_firewall_queue(self):
         while not self.firewall_event_queue.empty():
@@ -221,6 +232,18 @@ class App(customtkinter.CTk):
                 reason = event["reason"]
 
                 self.scrollable_checkbox_frame.add_blocked_ip(ip, duration, reason)
+                # Always store in history
+                if ip not in self.block_history:
+                    self.block_history[ip] = []
+                self.block_history[ip].append((duration, reason))
+
+                # Keep history bounded to last 100 entries
+                if len(self.block_history[ip]) > 100:
+                    self.block_history[ip] = self.block_history[ip][-100:]
+
+                # If popup is open, update it (maybe redundant)
+                if ip in self.open_popups:
+                    self.open_popups[ip].set_block_info(duration, reason)
 
                 if ip in self.open_popups:
                     self.open_popups[ip].set_block_info(duration, reason)

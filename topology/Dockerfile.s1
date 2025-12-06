@@ -1,8 +1,35 @@
-FROM kathara/sdn
+FROM kathara/base
+LABEL org.opencontainers.image.authors="oussk03"
 
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- Build deps for Open vSwitch 2.13 ---
 RUN apt-get update && apt-get install -y \
-    python3-pip python3-dev gcc libpcap-dev python3-venv \
-    && python3 -m pip install --break-system-packages scapy \
+    git build-essential fakeroot debhelper autoconf automake libtool pkg-config \
+    python3 python3-pip python3-dev \
+    libssl-dev libcap-ng-dev libunbound-dev libpcap-dev \
+    iproute2 iputils-ping tcpdump \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Build and install Open vSwitch 2.13 from source (user-space only) ---
+RUN git clone https://github.com/openvswitch/ovs.git /ovs && \
+    cd /ovs && \
+    git checkout v2.13.0 && \
+    ./boot.sh && \
+    ./configure --prefix=/usr --localstatedir=/var --sysconfdir=/etc && \
+    make -j"$(nproc)" && \
+    make install && \
+    cd / && rm -rf /ovs
+
+# --- Prepare runtime dirs ---
+RUN mkdir -p /var/run/openvswitch /etc/openvswitch
+
+# --- Scapy for sniffer ---
+RUN pip3 install --break-system-packages scapy
+
+# --- Startup wrapper ---
+COPY start-ovs.sh /usr/local/bin/start-ovs.sh
+RUN chmod +x /usr/local/bin/start-ovs.sh
+
+ENTRYPOINT ["/usr/local/bin/start-ovs.sh"]
 
