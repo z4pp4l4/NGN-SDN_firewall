@@ -26,7 +26,7 @@ HOST_IP = "172.17.0.1"
 PORT = 5001
 
 
-def connect_to_gui(max_retries=3, retry_delay=1):
+def connect_to_gui(max_retries=100, retry_delay=1):
     sock = socket.socket()
 
     for attempt in range(1, max_retries + 1):

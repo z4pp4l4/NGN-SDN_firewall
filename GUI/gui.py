@@ -153,11 +153,16 @@ class App(customtkinter.CTk):
     def register_popup(self, ip, popup_window):
         self.open_popups[ip] = popup_window
 
-        for pkt in self.packet_history.get(ip, []):
-            popup_window.add_packet_card(pkt)
+        # --- show only the LAST PACKET ---
+        if ip in self.packet_history and self.packet_history[ip]:
+            last_pkt = self.packet_history[ip][-1]
+            popup_window.add_packet_card(last_pkt)
 
-        for duration, reason in self.block_history.get(ip, []):
-            popup_window.set_block_info(duration, reason)
+        # --- show only the LAST BLOCK EVENT ---
+        if ip in self.block_history and self.block_history[ip]:
+            last_duration, last_reason = self.block_history[ip][-1]
+            popup_window.set_block_info(last_duration, last_reason)
+
 
     def unregister_popup(self, ip):
         if ip in self.open_popups:
@@ -242,9 +247,6 @@ class App(customtkinter.CTk):
                 if len(self.packet_history[src_ip]) > 500:
                     self.packet_history[src_ip] = self.packet_history[src_ip][-500:]
 
-                if src_ip in self.open_popups:
-                    popup = self.open_popups[src_ip]
-                    popup.add_packet_card(pkt)
 
         self.after(50, self.check_packet_queue)
 
@@ -252,7 +254,6 @@ class App(customtkinter.CTk):
         while not self.firewall_event_queue.empty():
             raw = self.firewall_event_queue.get()
             event = json.loads(raw)
-            print("Firewall event received:", event)
 
             if event["type"] == "block":
                 ip = event["ip"]
