@@ -7,6 +7,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         super().__init__(master)
 
         self.app_ref = app_ref
+        self.app_ref = app_ref
         self.value = value
         self.geometry("400x400")
         self.title(value)
@@ -25,6 +26,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         self.packet_view = customtkinter.CTkScrollableFrame(self, label_text="Packets")
         self.packet_view.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
 
+        # ---- Determine host IP/MAC ----
         value_cat = value.split()[0]
 
         if value_cat == "host":
@@ -45,6 +47,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
 
         elif value_cat == "switch":
             self.ip = None
+            self.ip = None
             customtkinter.CTkLabel(info_frame, text="Switch").grid(row=0, column=0, sticky="w")
 
         else:  
@@ -59,6 +62,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
             customtkinter.CTkLabel(info_frame, text=self.mac).grid(row=1, column=1, sticky="w")
 
         if self.ip:
+            self.app_ref.register_popup(self.ip, self)
             self.app_ref.register_popup(self.ip, self)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)

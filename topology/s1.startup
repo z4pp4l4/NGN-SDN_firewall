@@ -38,8 +38,10 @@ ip link set s1 up
 ovs-vsctl set bridge s1 protocols=OpenFlow13
 ovs-vsctl set-controller s1 tcp:192.168.100.1:6633
 ovs-vsctl set-fail-mode s1 secure
+ovs-vsctl set-fail-mode s1 secure
 ovs-vsctl set bridge s1 other-config:disable-in-band=true
 
+# Basic L2 help for ARP + ICMP, everything else to controller
 
 # IMPORTANTISSIMO: manda IP al controller
 ovs-ofctl add-flow s1 "priority=0,ip,actions=CONTROLLER"

@@ -23,8 +23,14 @@ class App(customtkinter.CTk):
         self.packet_history = {}
         self.block_history = {}
 
+        self.packet_history = {}
+        self.block_history = {}
+
         self.packet_queue = queue.Queue()
         self.check_packet_queue()
+
+        self.firewall_event_queue = queue.Queue()
+        self.check_firewall_queue()
 
         self.firewall_event_queue = queue.Queue()
         self.check_firewall_queue()
@@ -118,6 +124,7 @@ class App(customtkinter.CTk):
         if via in existing:
             print("INFO: host route already exists. Skipping 'ip route add'.")
         else:
+            print("INFO: route does not exist. Attempting to add it...")
             print("INFO: route does not exist. Attempting to add it...")
             try:
                 subprocess.run(
