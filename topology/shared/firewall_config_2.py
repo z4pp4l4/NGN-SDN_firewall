@@ -114,6 +114,7 @@ class SDNFirewall(app_manager.RyuApp):
         self.logger.warning("DROP FLOW installed for %s (duration=%ds)", src_ip, duration)
     
     def notify_gui_block(self, ip, duration, reason):
+        print("Notifying GUI about blocked IP:", ip, duration, reason)
         if not self.gui_sock:
             return   # GUI not connected, ignore
         """Send block event to GUI."""

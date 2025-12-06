@@ -6,64 +6,62 @@ class MyOverview(customtkinter.CTkScrollableFrame):
         super().__init__(master, label_text=title)
         self.grid_columnconfigure(0, weight=1)
 
-        # Store blocked IPs here:
-        #   ip -> {"reason": str, "duration": int, "timestamp": float, "label": widget}
         self.blocked = {}
+        self.bind("<Configure>", self._update_wrap_lengths)
 
-        # Update every second to refresh countdowns
         self.update_blocked_list()
-
+    def _update_wrap_lengths(self, event):
+        for ip, data in self.blocked.items():
+            label = data["label"]
+            label.configure(wraplength=self.winfo_width() - 40)
     def add_blocked_ip(self, ip, duration, reason):
-        """Add an IP to the list with a visible label."""
-        # If already listed, update it instead
+        """Add an IP to the list with visible label."""
         if ip in self.blocked:
             self.update_blocked_ip(ip, duration, reason)
             return
 
-        # Create label text
-        text = f"⚠ {ip} — {reason.upper()} ({duration}s)"
-        label = customtkinter.CTkLabel(self, text=text, text_color="red")
+        text = f"{ip} — BLOCKED for {duration}s due to {reason.upper()}"
+        label = customtkinter.CTkLabel(self, text=text, text_color="red", wraplength=1)
         row = len(self.blocked)
 
-        label.grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        label.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
 
-        # Store
         self.blocked[ip] = {
             "reason": reason,
             "duration": duration,
             "timestamp": time.time(),
-            "label": label
+            "label": label,
+            "expired": False
         }
 
     def update_blocked_ip(self, ip, duration, reason):
-        """Update an existing blocked IP."""
+        """Update an existing block entry."""
         self.blocked[ip]["reason"] = reason
         self.blocked[ip]["duration"] = duration
         self.blocked[ip]["timestamp"] = time.time()
+        self.blocked[ip]["expired"] = False 
 
     def update_blocked_list(self):
-        """Runs every second to update countdown timers."""
+        """Update countdown, and leave text after expiration."""
         now = time.time()
-        remove_list = []
 
-        for ip, data in self.blocked.items():
+        for ip, data in list(self.blocked.items()):
             elapsed = now - data["timestamp"]
             remaining = int(data["duration"] - elapsed)
 
-            if remaining <= 0:
-                # Time expired — remove label
-                data["label"].destroy()
-                remove_list.append(ip)
-            else:
-                # Update label text
-                reason = data["reason"].upper()
+            reason = data["reason"].upper()
+
+            if remaining > 0:
                 data["label"].configure(
-                    text=f"⚠ {ip} — {reason} ({remaining}s)"
+                    text=f"⚠ {ip} — BLOCKED for {data['duration']}s due to {reason} ({remaining}s left)",
+                    text_color="red"
                 )
+            else:
+                if not data["expired"]:
+                    data["label"].configure(
+                        text=f"{ip} was blocked for {data['duration']} seconds due to {reason}",
+                        text_color="red"
+                    )
+                    data["expired"] = True
 
-        # Remove expired IPs
-        for ip in remove_list:
-            del self.blocked[ip]
-
-        # Schedule next update
         self.after(1000, self.update_blocked_list)
