@@ -14,7 +14,6 @@ class MyTopologyFrame(customtkinter.CTkFrame):
         self.grid_columnconfigure((0,1,2), weight=1)
         self.grid_rowconfigure((0,1), weight=1)
 
-        # Title
         title_label = customtkinter.CTkLabel(
             self, text=self.title_label_text,
             fg_color="gray30", corner_radius=6,
@@ -38,9 +37,6 @@ class MyTopologyFrame(customtkinter.CTkFrame):
 
         self.populate_hosts(self.controller_frame.inner, ["controller"], "images/controller.png", size=(40, 40))
 
-    # -------------------------------------------------
-    #  Populate a bubble with image-buttons
-    # -------------------------------------------------
     def populate_hosts(self, frame, host_list, icon_path, size):
         for host in host_list:
             img = customtkinter.CTkImage(
@@ -64,7 +60,6 @@ class MyTopologyFrame(customtkinter.CTkFrame):
     def on_click(self, value):
         ip = None
     
-        # compute IP the same way the popup class does
         parts = value.split()
         cat = parts[0]
     
@@ -72,17 +67,15 @@ class MyTopologyFrame(customtkinter.CTkFrame):
             ip = f"192.168.10.{int(parts[1])}"
         elif cat == "controller":
             ip = "192.168.100.1"
-        elif cat != "switch":  # external host
+        elif cat != "switch":  
             ip = f"192.168.20.{int(parts[1])}"
     
-        # if popup exists already → focus it
         if ip and ip in self.app_ref.open_popups:
             popup = self.app_ref.open_popups[ip]
             popup.lift()
             popup.focus_force()
             return
     
-        # otherwise create a new popup
         ToplevelWindow(self, value, self.app_ref)
 
 
@@ -98,7 +91,6 @@ class DashedBubble(customtkinter.CTkFrame):
         )
         self.label.pack(pady=(0, 5))
 
-        # ✔ FIX: use a single safe color for Canvas
         bg_color = self._apply_appearance_mode("#e5e5e5")
 
         self.canvas = tk.Canvas(
@@ -115,10 +107,9 @@ class DashedBubble(customtkinter.CTkFrame):
         self.inner = customtkinter.CTkFrame(self.canvas, fg_color="transparent")
         self.canvas.create_window(width//2, height//2, window=self.inner)
     def _draw_dashed_bubble(self, w, h):
-        r = 40          # rounded corner radius
-        dash = (4, 4)   # dashed pattern
+        r = 40          
+        dash = (4, 4)   
         color = "#bbbbbb"
-        # Corners
         self.canvas.create_arc(0, 0, r*2, r*2,
             start=90, extent=90, style="arc",
             outline=color, width=2, dash=dash)
@@ -131,7 +122,6 @@ class DashedBubble(customtkinter.CTkFrame):
         self.canvas.create_arc(0, h-r*2, r*2, h,
             start=180, extent=90, style="arc",
             outline=color, width=2, dash=dash)
-        # Lines between corners
         self.canvas.create_line(r, 0, w-r, 0,
             fill=color, width=2, dash=dash)
         self.canvas.create_line(r, h, w-r, h,

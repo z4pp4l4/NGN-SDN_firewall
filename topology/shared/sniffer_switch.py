@@ -1,8 +1,10 @@
 from scapy.all import sniff
 import socket
+import base64
 
 HOST_IP = "172.17.0.1"
 PORT = 5000
+
 
 print("[SNIFFER] connecting to GUI...")
 sock = socket.socket()
@@ -12,7 +14,8 @@ print("[SNIFFER] connected!")
 def send_packet(pkt):
     try:
         raw_bytes = bytes(pkt)
-        sock.sendall(raw_bytes + b"\n")
+        encoded = base64.b64encode(raw_bytes).decode()
+        sock.sendall((encoded + "\n").encode())
     except Exception as e:
         print("[SNIFFER] error sending packet:", e)
 

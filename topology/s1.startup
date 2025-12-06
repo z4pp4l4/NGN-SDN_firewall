@@ -1,5 +1,8 @@
 #!/bin/bash
 
+echo "[s1.startup] Running startup..." 
+echo "HELLO FROM STARTUP" > /shared/startup_test.txt
+
 # === 1. Interface configuration ===
 ip addr add 192.168.100.2/30 dev eth0
 ip link set eth0 up
@@ -13,28 +16,38 @@ ip link set eth2 up
 ip addr add 192.168.70.2/29 dev eth3
 ip link set eth3 up
 
-# Enable IP forwarding (ignore permission warning if any)
-sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
+sysctl -w net.ipv4.ip_forward=1
 
-# === 2. OVS bridge + ports ===
+# === 2. Start OVS correctly ===
+/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random
+sleep 1
+
+
+# === 4. OVS bridge setup ===
 ovs-vsctl --if-exists del-br s1
 ovs-vsctl add-br s1
 
-ovs-vsctl add-port s1 eth1      # internal side
-ovs-vsctl add-port s1 eth2      # external side
+
+ovs-vsctl add-port s1 eth1
+ovs-vsctl add-port s1 eth2
+#ovs-vsctl add-port s1 eth3
 
 ip link set s1 up
 
-# === 3. OpenFlow settings / controller ===
+# === 5. Controller ===
 ovs-vsctl set bridge s1 protocols=OpenFlow13
 ovs-vsctl set-controller s1 tcp:192.168.100.1:6633
+ovs-vsctl set-fail-mode s1 secure
 ovs-vsctl set-fail-mode s1 secure
 ovs-vsctl set bridge s1 other-config:disable-in-band=true
 
 # Basic L2 help for ARP + ICMP, everything else to controller
 
-ovs-ofctl add-flow s1 "priority=0,actions=CONTROLLER"
+# IMPORTANTISSIMO: manda IP al controller
+ovs-ofctl add-flow s1 "priority=0,ip,actions=CONTROLLER"
 
 # === 4. Default route for hostpipe/sniffer side ===
 ip route add default via 192.168.70.1 dev eth3
+
+echo "[s1.startup] Finished."
 

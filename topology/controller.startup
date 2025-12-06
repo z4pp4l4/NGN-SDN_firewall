@@ -1,13 +1,21 @@
+#!/bin/bash
 ip addr add 192.168.100.1/30 dev eth0
 
 ip addr add 192.168.70.5/29 dev eth1
 ip link set eth1 up
 
+ip link set eth0 up
+
+
+
+sleep 2
 
 # === 3. Default Route (Crucial for GUI connection) ===
 # This tells 'controller' to send all non-local traffic out eth1 via the hostpipe (192.168.70.1)
 ip route add default via 192.168.70.1 dev eth1
 
-ryu-manager shared/firewall_config_2.py
+ryu-manager --ofp-tcp-listen-port 6633 /shared/firewall_config_2.py
+
+
 
 

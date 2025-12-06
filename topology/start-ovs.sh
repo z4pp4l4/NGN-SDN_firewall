@@ -1,19 +1,20 @@
 #!/bin/bash
-set -e
+echo "[start-ovs] Starting user-space OVS..."
 
-echo "[s1] Initializing Open vSwitch..."
+# Start ovsdb-server
+ovsdb-server \
+  --remote=punix:/var/run/openvswitch/db.sock \
+  --remote=ptcp:6640:127.0.0.1 \
+  --pidfile --detach
 
-# Create DB if missing
-if [ ! -f /etc/openvswitch/conf.db ]; then
-  ovsdb-tool create /etc/openvswitch/conf.db /usr/share/openvswitch/vswitch.ovsschema
-fi
+# Initialize DB if needed
+ovs-vsctl --db=unix:/var/run/openvswitch/db.sock --no-wait init
 
-# Start ovsdb-server + ovs-vswitchd
-/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random
+# Start ovs-vswitchd
+ovs-vswitchd unix:/var/run/openvswitch/db.sock \
+  --pidfile --detach
 
-# Give it a moment
-sleep 1
+echo "[start-ovs] OVS is running. Handing over to Kathara startup..."
 
-echo "[s1] OVS started. Handing control to shell."
-exec bash
+exec /bin/bash
 
