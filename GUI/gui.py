@@ -32,9 +32,6 @@ class App(customtkinter.CTk):
         self.firewall_event_queue = queue.Queue()
         self.check_firewall_queue()
 
-        self.firewall_event_queue = queue.Queue()
-        self.check_firewall_queue()
-
         self.title("NGN GUI")
         self.geometry("800x800")
         self.grid_columnconfigure((0, 1), weight=1)
@@ -255,6 +252,7 @@ class App(customtkinter.CTk):
         while not self.firewall_event_queue.empty():
             raw = self.firewall_event_queue.get()
             event = json.loads(raw)
+            print("Firewall event received:", event)
 
             if event["type"] == "block":
                 ip = event["ip"]
