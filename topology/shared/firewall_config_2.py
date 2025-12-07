@@ -62,7 +62,6 @@ class SDNFirewall(app_manager.RyuApp):
         self.mac_to_port = {}
 
         # Router interfaces - FIXED: Use actual OVS port numbers
-        # Router interfaces - FIXED: Use actual OVS port numbers
         self.interfaces = {
             1: {  # eth1 = port 1
                 "ip": ipaddress.ip_address("192.168.10.4"),
@@ -231,7 +230,7 @@ class SDNFirewall(app_manager.RyuApp):
 
         return False
 
-
+    '''
     def detect_port_scan(self, datapath, src_ip, dst_port):
         """Detect port scans"""
         flow_key = src_ip
@@ -248,11 +247,34 @@ class SDNFirewall(app_manager.RyuApp):
         if len(tracking["ports"]) >= self.port_scan_threshold:
             self.logger.warning("PORT SCAN DETECTED: %s scanning %d unique ports",
                               src_ip, len(tracking["ports"]))
-            self.block_ip(datapath, src_ip, duration=180,reason="port_scan")
-            self.add_to_blacklist(src_ip)     # <-- MUST BE RESTORED
+            self.block_ip(datapath, src_ip, duration=10,reason="port_scan")
+            self.add_to_blacklist(src_ip)   
             return True
         return False
-        
+    '''
+    def detect_port_scan(self, datapath, src_ip, dst_port):
+        now = time.time()
+        tracking = self.port_scan_tracking[src_ip]
+
+        # Rolling window update
+        if now - tracking["first_time"] > self.port_scan_window:
+            tracking["ports"].clear()
+            tracking["first_time"] = now
+
+        # Add port
+        tracking["ports"].add(dst_port)
+        # Detection threshold
+        if len(tracking["ports"]) >= self.port_scan_threshold:
+            self.logger.warning(f"PORT SCAN DETECTED from {src_ip}: {len(tracking['ports'])} unique ports")
+            # Notify GUI immediately
+            #self.notify_gui_block(src_ip, duration=10, reason="port_scan_detected")
+            # Temporary block
+            self.block_ip(datapath, src_ip, duration=10, reason="port_scan")
+            return True
+
+        return False
+
+
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
