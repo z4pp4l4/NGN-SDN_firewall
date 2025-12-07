@@ -15,7 +15,6 @@ class MyOverview(customtkinter.CTkScrollableFrame):
             label = data["label"]
             label.configure(wraplength=self.winfo_width() - 40)
     def add_blocked_ip(self, ip, duration, reason):
-        """Add an IP to the list with visible label."""
         if ip in self.blocked:
             self.update_blocked_ip(ip, duration, reason)
             return
@@ -63,4 +62,5 @@ class MyOverview(customtkinter.CTkScrollableFrame):
                     data["expired"] = True
 
         self.after(1000, self.update_blocked_list)
+
 
