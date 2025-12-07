@@ -17,14 +17,8 @@ import socket
 import json
 
 
-
 HOST_IP = "172.17.0.1"
 PORT = 5001
-
-
-HOST_IP = "172.17.0.1"
-PORT = 5001
-
 
 def connect_to_gui(max_retries=100, retry_delay=1):
     sock = socket.socket()
@@ -40,7 +34,6 @@ def connect_to_gui(max_retries=100, retry_delay=1):
 
     print("[FIREWALL] GUI not reachable, continuing WITHOUT GUI connection.")
     return None
-############################################
 
 class SDNFirewall(app_manager.RyuApp):
 
@@ -50,13 +43,11 @@ class SDNFirewall(app_manager.RyuApp):
         super(SDNFirewall, self).__init__(*args, **kwargs)
         self.name = "SDNFirewall"
         self.listener_started_firewall = False
-########################
         self.blocked_ips = {}
         self.blacklist=set()
 
         # GUI connection so that I can receive the list of blocked ip addresses
         self.gui_sock = connect_to_gui()
-############################
         # ARP table: IP -> (MAC, port)
         self.arp_table = {}
         self.mac_to_port = {}
@@ -67,12 +58,10 @@ class SDNFirewall(app_manager.RyuApp):
             1: {  # eth1 = port 1
                 "ip": ipaddress.ip_address("192.168.10.4"),
                 "mac": "0a:b3:e7:ec:f4:3f",
-                "mac": "0a:b3:e7:ec:f4:3f",
                 "net": ipaddress.ip_network("192.168.10.0/29")
             },
             2: {  # eth2 = port 2
                 "ip": ipaddress.ip_address("192.168.20.8"),
-                "mac": "52:98:79:8f:df:e0",
                 "mac": "52:98:79:8f:df:e0",
                 "net": ipaddress.ip_network("192.168.20.0/28")
             }
@@ -96,17 +85,6 @@ class SDNFirewall(app_manager.RyuApp):
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
 
-        mod = parser.OFPFlowMod(
-            datapath=datapath,
-            buffer_id=buffer_id if buffer_id else ofproto.OFP_NO_BUFFER,
-            priority=priority,
-            match=match,
-            instructions=inst,
-            idle_timeout=idle_timeout,
-            hard_timeout=hard_timeout
-        )
-        
-        self.logger.info("Installing flow: priority=%d, match=%s", priority, match)
         mod = parser.OFPFlowMod(
             datapath=datapath,
             buffer_id=buffer_id if buffer_id else ofproto.OFP_NO_BUFFER,
@@ -181,7 +159,7 @@ class SDNFirewall(app_manager.RyuApp):
         del self.blocked_ips[src_ip]
         return False
 
-###################gio#########################
+#-------------------GUI retrieval of blacklist-----------------------
     def add_to_blacklist(self, src_ip):
         """Permanently blacklist an IP."""
         self.blacklist.add(src_ip)
@@ -199,13 +177,14 @@ class SDNFirewall(app_manager.RyuApp):
     def get_blacklist(self):
         """Get current blacklist (helper, e.g. for REST)."""
         return list(self.blacklist)
-###################################################
+#-------------------GUI retrieval of blacklist-----------------------
+
+
     def detect_dos(self, datapath, src_ip, dst_ip, dst_port):
         """Detect DoS attacks based on packet rate over a sliding window."""
 
         flow_key = src_ip
         current_time = time.time()
-
         history = self.packet_history[flow_key]
 
         # Remove timestamps older than the window
@@ -231,28 +210,29 @@ class SDNFirewall(app_manager.RyuApp):
 
         return False
 
-
     def detect_port_scan(self, datapath, src_ip, dst_port):
-        """Detect port scans"""
-        flow_key = src_ip
-        current_time = time.time()
-        tracking = self.port_scan_tracking[flow_key]
+        now = time.time()
+        tracking = self.port_scan_tracking[src_ip]
 
-        # Reset if outside window
-        if (current_time - tracking["first_time"]) > self.port_scan_window:
+        # Rolling window update
+        if now - tracking["first_time"] > self.port_scan_window:
             tracking["ports"].clear()
-            tracking["first_time"] = current_time
+            tracking["first_time"] = now
 
+        # Add port
         tracking["ports"].add(dst_port)
-
+        # Detection threshold
         if len(tracking["ports"]) >= self.port_scan_threshold:
-            self.logger.warning("PORT SCAN DETECTED: %s scanning %d unique ports",
-                              src_ip, len(tracking["ports"]))
-            self.block_ip(datapath, src_ip, duration=180,reason="port_scan")
-            self.add_to_blacklist(src_ip)     # <-- MUST BE RESTORED
+            self.logger.warning(f"PORT SCAN DETECTED from {src_ip}: {len(tracking['ports'])} unique ports")
+            # Notify GUI immediately
+            #self.notify_gui_block(src_ip, duration=10, reason="port_scan_detected")
+            # Temporary block
+            self.block_ip(datapath, src_ip, duration=10, reason="port_scan")
             return True
+
         return False
-        
+
+
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
@@ -282,7 +262,6 @@ class SDNFirewall(app_manager.RyuApp):
 
 
     def _get_out_iface(self, dst_ip):
-        """Determine outgoing interface for destination IP"""
         """Determine outgoing interface for destination IP"""
         ip = ipaddress.ip_address(dst_ip)
         for port_no, iface in self.interfaces.items():
@@ -331,7 +310,6 @@ class SDNFirewall(app_manager.RyuApp):
 
     def _handle_arp(self, msg, in_port, pkt, datapath):
         """Handle ARP packets"""
-        """Handle ARP packets"""
         ofp = datapath.ofproto
         parser = datapath.ofproto_parser
 
@@ -343,19 +321,13 @@ class SDNFirewall(app_manager.RyuApp):
         dst_ip = arp_pkt.dst_ip
 
         # Learn ARP mapping
-        # Learn ARP mapping
         self.arp_table[src_ip] = (src_mac, in_port)
-        self.logger.info("ARP learn: %s is at %s (port %d)", src_ip, src_mac, in_port)
         self.logger.info("ARP learn: %s is at %s (port %d)", src_ip, src_mac, in_port)
 
         if arp_pkt.opcode == arp.ARP_REQUEST:
             # Check if request is for our router interface
-            # Check if request is for our router interface
             for port_no, iface in self.interfaces.items():
                 if iface["ip"].compressed == dst_ip and port_no == in_port:
-                    # Reply with our MAC
-                    self.logger.info("ARP request for gateway %s, replying", dst_ip)
-                    
                     # Reply with our MAC
                     self.logger.info("ARP request for gateway %s, replying", dst_ip)
                     
@@ -389,16 +361,7 @@ class SDNFirewall(app_manager.RyuApp):
 
             # Not for us, flood
             self.logger.info("ARP request not for router, flooding")
-            # Not for us, flood
-            self.logger.info("ARP request not for router, flooding")
             actions = [parser.OFPActionOutput(ofp.OFPP_FLOOD)]
-            out = parser.OFPPacketOut(
-                datapath=datapath,
-                buffer_id=msg.buffer_id,
-                in_port=in_port,
-                actions=actions,
-                data=msg.data
-            )
             out = parser.OFPPacketOut(
                 datapath=datapath,
                 buffer_id=msg.buffer_id,
@@ -409,7 +372,6 @@ class SDNFirewall(app_manager.RyuApp):
             datapath.send_msg(out)
 
         elif arp_pkt.opcode == arp.ARP_REPLY:
-            self.logger.info("Received ARP reply: %s is at %s", src_ip, src_mac)
             self.logger.info("Received ARP reply: %s is at %s", src_ip, src_mac)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -432,13 +394,8 @@ class SDNFirewall(app_manager.RyuApp):
             return
 
         # Handle IPv4
-        # Handle IPv4
         ipv4_pkt = pkt.get_protocol(ipv4.ipv4)
-        if not ipv4_pkt:
-            # Non-IP traffic - basic L2 switching
-            dpid = datapath.id
-            self.mac_to_port.setdefault(dpid, {})
-            
+        if not ipv4_pkt:      
             # Non-IP traffic - basic L2 switching
             dpid = datapath.id
             self.mac_to_port.setdefault(dpid, {})
@@ -447,7 +404,6 @@ class SDNFirewall(app_manager.RyuApp):
             dst = eth.dst
             self.mac_to_port[dpid][src] = in_port
 
-            out_port = self.mac_to_port[dpid].get(dst, ofp.OFPP_FLOOD)
             out_port = self.mac_to_port[dpid].get(dst, ofp.OFPP_FLOOD)
             actions = [parser.OFPActionOutput(out_port)]
             
@@ -464,32 +420,18 @@ class SDNFirewall(app_manager.RyuApp):
                 actions=actions,
                 data=data
             )
-            match = parser.OFPMatch(in_port=in_port, eth_src=src, eth_dst=dst)
-            self.add_flow(datapath, 1, match, actions)
-            
-            data = msg.data if msg.buffer_id == ofp.OFP_NO_BUFFER else None
-            out = parser.OFPPacketOut(
-                datapath=datapath,
-                buffer_id=msg.buffer_id,
-                in_port=in_port,
-                actions=actions,
-                data=data
-            )
             datapath.send_msg(out)
             return
 
-        # === L3 ROUTING + SECURITY ===
         # === L3 ROUTING + SECURITY ===
         src_ip = ipv4_pkt.src
         dst_ip = ipv4_pkt.dst
 
         # Check if source IP is blocked
-        # Check if source IP is blocked
         if self.is_ip_blocked(src_ip):
             self.logger.warning("DROPPING packet from blocked IP: %s", src_ip)
             return
 
-        # Extract port numbers
         # Extract port numbers
         dst_port = None
         tcp_pkt = pkt.get_protocol(tcp.tcp)
@@ -508,9 +450,7 @@ class SDNFirewall(app_manager.RyuApp):
                 return
 
         self.logger.info("IPv4: %s -> %s (port %d)", src_ip, dst_ip, in_port)
-        self.logger.info("IPv4: %s -> %s (port %d)", src_ip, dst_ip, in_port)
 
-        # Determine output interface
         # Determine output interface
         out_port, out_iface = self._get_out_iface(dst_ip)
         if out_port is None:
@@ -518,12 +458,9 @@ class SDNFirewall(app_manager.RyuApp):
             return
 
         # Same subnet (no routing needed)
-        # Same subnet (no routing needed)
         if out_port == in_port:
             dst_entry = self.arp_table.get(dst_ip)
-            if dst_entry:
-                dst_mac, dst_host_port = dst_entry
-            dst_entry = self.arp_table.get(dst_ip)
+        
             if dst_entry:
                 dst_mac, dst_host_port = dst_entry
                 actions = [parser.OFPActionOutput(dst_host_port)]
@@ -534,9 +471,7 @@ class SDNFirewall(app_manager.RyuApp):
                     ipv4_dst=dst_ip
                 )
                 self.add_flow(datapath, 10, match, actions)
-                self.add_flow(datapath, 10, match, actions)
             else:
-                # Flood on same subnet
                 # Flood on same subnet
                 actions = [parser.OFPActionOutput(ofp.OFPP_FLOOD)]
             
@@ -550,30 +485,16 @@ class SDNFirewall(app_manager.RyuApp):
             )
             datapath.send_msg(out)
             return
-            
-            data = msg.data if msg.buffer_id == ofp.OFP_NO_BUFFER else None
-            out = parser.OFPPacketOut(
-                datapath=datapath,
-                buffer_id=msg.buffer_id,
-                in_port=in_port,
-                actions=actions,
-                data=data
-            )
-            datapath.send_msg(out)
-            return
-
-        # Different subnet (routing needed)
+        
         # Different subnet (routing needed)
         dst_entry = self.arp_table.get(dst_ip)
         if not dst_entry:
             self.logger.info("No ARP entry for %s, sending ARP request", dst_ip)
             self._send_arp_request(datapath, dst_ip, out_port, out_iface)
-            self._send_arp_request(datapath, dst_ip, out_port, out_iface)
             return
 
         dst_mac, dst_host_port = dst_entry
 
-        # Install forwarding flow with MAC rewrite
         # Install forwarding flow with MAC rewrite
         actions = [
             parser.OFPActionSetField(eth_src=out_iface["mac"]),
