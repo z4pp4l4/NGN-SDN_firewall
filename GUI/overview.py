@@ -35,14 +35,12 @@ class MyOverview(customtkinter.CTkScrollableFrame):
         }
 
     def update_blocked_ip(self, ip, duration, reason):
-        """Update an existing block entry."""
         self.blocked[ip]["reason"] = reason
         self.blocked[ip]["duration"] = duration
         self.blocked[ip]["timestamp"] = time.time()
         self.blocked[ip]["expired"] = False 
 
     def update_blocked_list(self):
-        """Update countdown, and leave text after expiration."""
         now = time.time()
 
         for ip, data in list(self.blocked.items()):
@@ -53,7 +51,7 @@ class MyOverview(customtkinter.CTkScrollableFrame):
 
             if remaining > 0:
                 data["label"].configure(
-                    text=f"⚠ {ip} — BLOCKED for {data['duration']}s due to {reason} ({remaining}s left)",
+                    text=f"{ip} — BLOCKED for {data['duration']}s due to {reason} ({remaining}s left)",
                     text_color="red"
                 )
             else:
@@ -65,3 +63,4 @@ class MyOverview(customtkinter.CTkScrollableFrame):
                     data["expired"] = True
 
         self.after(1000, self.update_blocked_list)
+
