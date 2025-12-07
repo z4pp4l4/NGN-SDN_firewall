@@ -82,3 +82,48 @@ fi
 echo
 echo "-------------------------------------"
 echo "[INFO] DoS scenario test completed."
+
+
+# 7) PORT SCANNING ATTACK (NEW PART)
+echo "[STEP 7] Starting PORT SCANNING attack (should be detected)..."
+echo "Scanning 12 ports rapidly to exceed threshold..."
+
+# firewall detects >= 10 UNIQUE PORTS → we scan 12 ports
+for port in {1000..1011}; do
+    kathara exec ext2 -- hping3 -S -p $port --count 1 $TARGET_IP >/dev/null 2>&1
+done
+
+echo "[OK] Port scan packets sent (12 ports)."
+echo
+
+sleep 2
+
+# 8) TEST IF PORT SCANNER IS BLOCKED
+
+echo "[STEP 8] Testing if port-scan attacker ext2 is BLOCKED..."
+
+kathara exec ext2 -- nc -zvw1 $TARGET_IP 2020
+if [ $? -ne 0 ]; then
+    echo "[SUCCESS] Port scanner ext2 is BLOCKED by firewall."
+else
+    echo "[FAIL] Port scanner ext2 is NOT blocked!"
+fi
+echo
+
+echo "[STEP 9] Waiting for port-scan block timeout (10 seconds)..."
+sleep 15
+echo
+
+# 9) PORTSCAN TIMEOUT TEST
+
+echo "[STEP 10] Checking if ext2 is UNBLOCKED after timeout..."
+kathara exec ext2 -- nc -zvw1 $TARGET_IP 2020
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] ext2 is UNBLOCKED (timeout works)."
+else
+    echo "[FAIL] ext2 is STILL blocked!"
+fi
+echo
+
+echo "------------------------------------------------"
+echo "[INFO] Scenario test completed (DoS + Port Scan)."
