@@ -11,7 +11,6 @@ The aim of this project is to create a SDN with three main features:
 **Design and Methodologies**
 
 The network was simulated using [kathara](https://www.kathara.org/). When the lab starts, the [OVS](https://www.openvswitch.org/) switch is configured to connect to the [Ryu](https://ryu.readthedocs.io/en/latest/parameters.html) controller which sends FlowMod instructions to the switch that can later apply them to handle the traffic between the networks.
-!!!ouss se riesci qua spiega un po' come funziona la parte di [docker](https://docs.docker.com/)!!!
 For what concerns the GUI, we used [customtkinter](https://customtkinter.tomschimansky.com/) to show a simple display of the topology. What is most interesting about the frontend part of our project is how we show packets that are flowing in the network. To do this part we found of particular use the python library [Scapy](https://scapy.readthedocs.io/en/latest/) that sniffed packets flowing in the katharà simulated network. We now needed a way to communicate these packets to the host OS, for this we used an hostpipe that was configured (inside lab.conf) as: 
 ```bash
 hostpipe[bridged]=true
