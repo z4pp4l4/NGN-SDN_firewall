@@ -53,7 +53,6 @@ class SDNFirewall(app_manager.RyuApp):
         self.mac_to_port = {}
 
         # Router interfaces - FIXED: Use actual OVS port numbers
-        # Router interfaces - FIXED: Use actual OVS port numbers
         self.interfaces = {
             1: {  # eth1 = port 1
                 "ip": ipaddress.ip_address("192.168.10.4"),
