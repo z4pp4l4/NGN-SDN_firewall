@@ -110,7 +110,7 @@ else
 fi
 echo
 
-echo "[STEP 9] Waiting for port-scan block timeout (10 seconds)..."
+echo "[STEP 9] Waiting for port-scan block timeout (15 seconds)..."
 sleep 15
 echo
 

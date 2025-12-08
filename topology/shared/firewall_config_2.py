@@ -16,6 +16,7 @@ import time
 import socket
 import json
 
+from ryu.lib import hub
 
 HOST_IP = "172.17.0.1"
 PORT = 5001
@@ -46,6 +47,13 @@ class SDNFirewall(app_manager.RyuApp):
         self.blocked_ips = {}
         self.blacklist=set()
 
+         # STATIC RULES:
+        # - static_block_ips: manual IP blocks (never expire unless removed)
+        # - static_port_rules: manual port rules (e.g. block TCP dst_port 2020)
+        self.static_block_ips = set()
+        # each rule: {"protocol": "TCP"/"UDP", "port": 2020, "direction": "any"|"inbound"|"outbound"}
+        self.static_port_rules = []
+
         # GUI connection so that I can receive the list of blocked ip addresses
         self.gui_sock = connect_to_gui()
         # ARP table: IP -> (MAC, port)
@@ -65,17 +73,19 @@ class SDNFirewall(app_manager.RyuApp):
                 "net": ipaddress.ip_network("192.168.20.0/28")
             }
         }
-        self.dos_block_duration=10
-        # DoS detection: track packet rates per (src_ip, dst_ip, dst_port)
+        self.dos_block_duration=20
         self.packet_history = defaultdict(deque)
         self.dos_threshold = 10  # packets per window
         self.dos_window = 3  # seconds
 
-        # Port scan detection
         self.port_scan_tracking = defaultdict(lambda: {"ports": set(), "first_time": time.time()})
         self.port_scan_threshold = 10
         self.port_scan_window = 30
 
+         # Start listener for GUI commands, if connected
+        if self.gui_sock and not self.listener_started_firewall:
+            self.listener_started_firewall = True
+            hub.spawn(self.listen_to_gui)
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None, idle_timeout=0, hard_timeout=0):
         """Add flow with optional timeout"""
@@ -116,17 +126,116 @@ class SDNFirewall(app_manager.RyuApp):
         print("Notifying GUI about blocked IP:", ip, duration, reason)
         if not self.gui_sock:
             return   # GUI not connected, ignore
-        """Send block event to GUI."""
+        #Sending event to GUI 
         event = {
             "type": "block",
             "ip": ip,
             "duration": duration,
             "reason": reason
         }
+    
         try:
+            print("notify socket:", self.gui_sock)
             self.gui_sock.sendall((json.dumps(event) + "\n").encode())
+            print("Sent block event to GUI:", event)
         except:
             self.logger.error("Failed to send block event to GUI.")
+
+    def listen_to_gui(self):
+        buffer = ""
+        while True:
+            try:
+                data = self.gui_sock.recv(1024)
+                if not data:
+                    hub.sleep(1)
+                    continue
+
+                buffer += data.decode()
+
+                while "\n" in buffer:
+                    print("GUI socket: {}",self.gui_sock)
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        cmd = json.loads(line)
+                        print("Firewall received GUI command:", cmd)
+                        self.handle_gui_command(cmd)
+                    except Exception as e:
+                        self.logger.error("Error parsing GUI command '%s': %s", line, e)
+
+            except Exception as e:
+                print("Error in GUI listener:", e)
+                self.logger.error("GUI listener error: %s", e)
+                hub.sleep(1)
+
+    def handle_gui_command(self, cmd):
+        """
+        Handle JSON command from GUI.
+        "block_ip",
+                "unblock_ip",
+                "static_block_ip",
+                "static_unblock_ip",
+                "block_port",
+                "unblock_port",
+        """
+        cmd_type = cmd.get("type")
+        ip = cmd.get("ip")
+        duration = cmd.get("duration")
+        dp = self.datapath
+
+        if cmd_type == "block_ip" and dp and ip:
+            self.block_ip(dp, ip, duration=duration, reason="manual")
+            # Notify GUI
+            #self.notify_gui_block(ip, duration, "manual")
+            return
+        
+        if cmd_type == "unblock_ip" and ip:
+            if ip in self.blocked_ips:
+                del self.blocked_ips[ip]
+            # Notify GUI (duration=0 means unblocked)
+            self.notify_gui_block(ip, 0, "unblocked")
+            return
+
+        if cmd_type == "static_block_ip" and dp and ip:
+            self.add_static_ip_block(dp, ip)
+            # Static block → duration = -1
+            #self.notify_gui_block(ip, -1, "static_block")
+            return
+
+        if cmd_type == "static_unblock_ip" and ip:
+            self.remove_static_ip_block(ip)
+            # Notify GUI
+            self.notify_gui_block(ip, 0, "static_unblock")
+            return
+
+        if cmd_type == "block_port" and dp:
+            proto = cmd.get("protocol", "TCP").upper()
+            port = int(cmd.get("port", 0))
+            direction = cmd.get("direction", "any")
+
+            if port > 0:
+                self.add_static_port_rule(dp, proto, port, direction)
+
+                # Use a synthetic "IP" key so GUI can show popups
+                fake_ip = f"PORT-{proto}-{port}-{direction}"
+                self.notify_gui_block(fake_ip, -1, "static_port")
+            return
+
+        if cmd_type == "unblock_port":
+            proto = cmd.get("protocol", "TCP").upper()
+            port = int(cmd.get("port", 0))
+            direction = cmd.get("direction", "any")
+
+            if port > 0:
+                self.remove_static_port_rule(proto, port, direction)
+
+                fake_ip = f"PORT-{proto}-{port}-{direction}"
+                self.notify_gui_block(fake_ip, 0, "static_port_unblock")
+            return
+
+
 
     def block_ip(self, datapath, src_ip, duration=None, reason="manual"):
         if duration is None:
@@ -140,6 +249,10 @@ class SDNFirewall(app_manager.RyuApp):
        
     def is_ip_blocked(self, src_ip):
         """Check if IP is currently blocked; unblock automatically after timeout."""
+        # Static IP block: never auto-expires
+        if src_ip in self.static_block_ips:
+            return True
+        
         if src_ip in self.blacklist:
             return True
         # Not in block list → not blocked
@@ -156,6 +269,110 @@ class SDNFirewall(app_manager.RyuApp):
         # Timeout expired → unblock
         self.logger.warning("UNBLOCKING IP: %s (timeout expired)", src_ip)
         del self.blocked_ips[src_ip]
+        return False
+
+    # ----- STATIC IP RULES ------------------------------------------------
+
+    def add_static_ip_block(self, datapath, ip):
+        """Add a static IP block (never expires until manually removed)."""
+        if ip in self.static_block_ips:
+            return
+        self.static_block_ips.add(ip)
+        # static rule: use 0 hard_timeout => permanent
+        self.add_drop_flow(datapath, ip, duration=0)
+        self.notify_gui_block(ip, duration=-1, reason="static")
+        self.logger.warning("STATIC IP BLOCK added for %s", ip)
+
+    def remove_static_ip_block(self, ip):
+        """Remove a static IP block (note: flow removal not handled)."""
+        if ip in self.static_block_ips:
+            self.static_block_ips.remove(ip)
+            self.logger.info("STATIC IP BLOCK removed for %s", ip)
+            # You *could* send a flow-mod delete here, but not required
+            return True
+        return False
+
+    # ----- STATIC PORT RULES ----------------------------------------------
+
+    def add_static_port_rule(self, datapath, protocol, port, direction="any"):
+        """Add static rule to block traffic by port (e.g. TCP dst_port 2020)."""
+        rule = {
+            "protocol": protocol.upper(),
+            "port": port,
+            "direction": direction  # "any" | "inbound" | "outbound"
+        }
+        if rule in self.static_port_rules:
+            return
+
+        self.static_port_rules.append(rule)
+        self.logger.warning("STATIC PORT RULE added: %s", rule)
+        self.notify_gui_block(
+            ip=f"PORT-{protocol.upper()}-{port}",
+            duration=-1,                   # static rule = infinite
+            reason=f"static_port_{direction}"
+        )
+
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        match_kwargs = {
+            "eth_type": ether_types.ETH_TYPE_IP,
+        }
+
+        if protocol.upper() == "TCP":
+            match_kwargs["ip_proto"] = 6
+            match_kwargs["tcp_dst"] = port
+        elif protocol.upper() == "UDP":
+            match_kwargs["ip_proto"] = 17
+            match_kwargs["udp_dst"] = port
+
+        # Direction can be approximated by in_port: internal vs external
+        # If you want per-direction flows, you can create two flows with specific in_port.
+        match = parser.OFPMatch(**match_kwargs)
+        self.add_flow(datapath, 900, match, [], hard_timeout=0)  # permanent drop
+        self.logger.warning("STATIC DROP FLOW installed for %s %s", protocol, port)
+
+    def remove_static_port_rule(self, protocol, port, direction="any"):
+        """Remove a static port rule from local list (flows will persist until restart)."""
+        rule = {
+            "protocol": protocol.upper(),
+            "port": port,
+            "direction": direction
+        }
+        if rule in self.static_port_rules:
+            self.static_port_rules.remove(rule)
+            self.logger.info("STATIC PORT RULE removed: %s", rule)
+            # Explicit flow removal could be implemented here if needed
+            self.notify_gui_block(
+                ip=f"PORT-{protocol.upper()}-{port}",
+                duration=0,
+                reason="port_unblocked"
+            )
+
+    def matches_static_port_rule(self, in_port, src_ip, dst_ip, tcp_pkt, udp_pkt):
+        """Check packet against static port rules (software check)."""
+        for rule in self.static_port_rules:
+            proto = rule["protocol"]
+            port = rule["port"]
+            direction = rule["direction"]
+
+            pkt_port = None
+            if proto == "TCP" and tcp_pkt:
+                pkt_port = tcp_pkt.dst_port
+            elif proto == "UDP" and udp_pkt:
+                pkt_port = udp_pkt.dst_port
+
+            if pkt_port is None or pkt_port != port:
+                continue
+
+            # Direction heuristics: 1 = internal, 2 = external
+            if direction == "any":
+                return True
+            if direction == "outbound" and in_port == 1:
+                return True
+            if direction == "inbound" and in_port == 2:
+                return True
+
         return False
 
 #-------------------GUI retrieval of blacklist-----------------------
@@ -176,6 +393,7 @@ class SDNFirewall(app_manager.RyuApp):
     def get_blacklist(self):
         """Get current blacklist (helper, e.g. for REST)."""
         return list(self.blacklist)
+
 #-------------------GUI retrieval of blacklist-----------------------
 
 
@@ -226,7 +444,7 @@ class SDNFirewall(app_manager.RyuApp):
             # Notify GUI immediately
             #self.notify_gui_block(src_ip, duration=10, reason="port_scan_detected")
             # Temporary block
-            self.block_ip(datapath, src_ip, duration=10, reason="port_scan")
+            self.block_ip(datapath, src_ip, duration=20, reason="port_scan")
             return True
 
         return False
@@ -441,6 +659,13 @@ class SDNFirewall(app_manager.RyuApp):
         elif udp_pkt:
             dst_port = udp_pkt.dst_port
 
+        # STATIC PORT RULES (e.g. block TCP dst_port 2020)
+        if self.matches_static_port_rule(in_port, src_ip, dst_ip, tcp_pkt, udp_pkt):
+            self.logger.warning(
+                "STATIC PORT RULE DROP: %s -> %s (port %s, in_port %d)",
+                src_ip, dst_ip, dst_port, in_port
+            )
+            return
         
         if dst_port:
             if self.detect_dos(datapath, src_ip, dst_ip, dst_port):

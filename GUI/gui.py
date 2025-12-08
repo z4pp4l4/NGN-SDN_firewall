@@ -17,14 +17,14 @@ class App(customtkinter.CTk):
 
         self.listener_started = False
         self.listener_started_firewall = False
+        self.firewall_conn = None   # Used to SEND commands to the firewall for static rules
+
 
         self.open_popups = {}
 
         self.packet_history = {}
         self.block_history = {}
 
-        self.packet_history = {}
-        self.block_history = {}
 
         self.packet_queue = queue.Queue()
         self.check_packet_queue()
@@ -47,7 +47,7 @@ class App(customtkinter.CTk):
         )
         self.topology_frame.grid(row=0, column=0, padx=10, pady=(10, 0), sticky="nsew")
 
-        self.scrollable_checkbox_frame = MyOverview(self, title="Overview")
+        self.scrollable_checkbox_frame = MyOverview(self, title="Overview", app_ref=self)
         self.scrollable_checkbox_frame.grid(row=0, column=1, padx=10, pady=(10, 0), sticky="nsew")
 
         self.button = customtkinter.CTkButton(self, text="start simulation", command=self.button_callback)
@@ -142,6 +142,8 @@ class App(customtkinter.CTk):
         if not self.listener_started_firewall:
             threading.Thread(target=self.blocked_ips_listener_thread, daemon=True).start()
 
+        ###maybe here add another commuication thread to send commands to firewall
+
         self.sniffer = subprocess.Popen(
             ["kathara", "exec", "s1", "--", "python3", "/shared/sniffer_switch.py"],
             cwd="../topology/",
@@ -168,6 +170,21 @@ class App(customtkinter.CTk):
         if ip in self.open_popups:
             del self.open_popups[ip]
 
+    def send_firewall_command(self, event: dict):
+        """Send a JSON command to the firewall over the existing TCP connection."""
+        if not self.firewall_conn:
+            print("⚠ No firewall connection yet, cannot send command.")
+            return
+
+        try:
+            print("Firewall socket:", self.firewall_conn)
+            msg = json.dumps(event) + "\n"
+            self.firewall_conn.sendall(msg.encode())
+            print("[GUI → Firewall] Sent:", msg.strip())
+        except Exception as e:
+            print("❌ Error sending command to firewall:", e)
+
+    
     def packet_listener_thread(self):
 
         self.listener_started = True
@@ -216,6 +233,7 @@ class App(customtkinter.CTk):
         print("Waiting for firewall connection...")
         conn, _ = server.accept()
         print("Firewall connected.")
+        self.firewall_conn = conn
 
         buffer = ""
 
@@ -229,6 +247,7 @@ class App(customtkinter.CTk):
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 if line.strip():
+                    print("[Firewall → GUI] Gui Received:", line.strip())
                     self.firewall_event_queue.put(line.strip())
 
     def check_packet_queue(self):
@@ -254,12 +273,13 @@ class App(customtkinter.CTk):
         while not self.firewall_event_queue.empty():
             raw = self.firewall_event_queue.get()
             event = json.loads(raw)
-
-            if event["type"] == "block":
+            print("[GUI] Processing firewall event:", event)
+            if event.get("type") == "block":
                 ip = event["ip"]
                 duration = event["duration"]
                 reason = event["reason"]
 
+                print(f"[GUI] IP {ip} BLOCKED for {duration}s due to {reason}")
                 self.scrollable_checkbox_frame.add_blocked_ip(ip, duration, reason)
 
                 if ip not in self.block_history:
@@ -269,10 +289,12 @@ class App(customtkinter.CTk):
                 if len(self.block_history[ip]) > 100:
                     self.block_history[ip] = self.block_history[ip][-100:]
 
-                if ip in self.open_popups:
-                    self.open_popups[ip].set_block_info(duration, reason)
+                for popup in self.open_popups.values():
+                    popup.apply_firewall_event(event)
 
-        self.after(50, self.check_firewall_queue)
+
+        self.after(1000, self.check_firewall_queue)
+
 
 
 app = App()
