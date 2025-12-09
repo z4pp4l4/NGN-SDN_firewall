@@ -152,6 +152,34 @@ class SDNFirewall(app_manager.RyuApp):
         datapath.send_msg(mod)
         self.logger.warning("DROP FLOW REMOVED for %s", src_ip)
 
+    def remove_port_drop_flow(self, datapath, protocol, port):
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        match_kwargs = {
+            "eth_type": ether_types.ETH_TYPE_IP,
+        }
+
+        if protocol.upper() == "TCP":
+            match_kwargs["ip_proto"] = 6
+            match_kwargs["tcp_dst"] = port
+        elif protocol.upper() == "UDP":
+            match_kwargs["ip_proto"] = 17
+            match_kwargs["udp_dst"] = port
+
+        match = parser.OFPMatch(**match_kwargs)
+
+        mod = parser.OFPFlowMod(
+            datapath=datapath,
+            command=ofproto.OFPFC_DELETE,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            match=match
+        )
+
+        datapath.send_msg(mod)
+        self.logger.warning("PORT DROP FLOW REMOVED for %s %d", protocol, port)
+
 
     def notify_gui_block(self, ip, duration, reason):
         print("Notifying GUI about blocked IP:", ip, duration, reason)
@@ -380,6 +408,8 @@ class SDNFirewall(app_manager.RyuApp):
         if rule in self.static_port_rules:
             self.static_port_rules.remove(rule)
             self.logger.info("STATIC PORT RULE removed: %s", rule)
+            if self.datapath:
+                self.remove_port_drop_flow(self.datapath, protocol, port)
             # Explicit flow removal could be implemented here if needed
             self.notify_gui_block(
                 ip=f"PORT-{protocol.upper()}-{port}",
