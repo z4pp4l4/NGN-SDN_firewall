@@ -17,7 +17,7 @@ TARGET_PORT="2020"               # monitored port in firewall
 echo "[INFO] Warming up ARP caches..."
 for i in 1 2 3; do
   for j in 1 2 3 4 5 6 7; do
-    kathara exec h$i -- ping -c1 -W1 192.168.20.$((j+1)) >/dev/null 2>&1
+      kathara exec h$i -- ping -c1 -W1 192.168.20.$((j+1)) >/dev/null 2>&1
   done
   echo "h$i completed..."
 done
@@ -110,7 +110,7 @@ else
 fi
 echo
 
-echo "[STEP 9] Waiting for port-scan block timeout (10 seconds)..."
+echo "[STEP 9] Waiting for port-scan block timeout (15 seconds)..."
 sleep 15
 echo
 
