@@ -133,4 +133,11 @@ class ToplevelWindow(customtkinter.CTkToplevel):
             self.extra_label.grid()
             return
 
-
+    def set_block_info(self, duration, reason):
+        msg = f"⚠ BLOCKED: {reason.upper()} for {duration}s"
+        self.block_label.configure(text=msg)
+        self.block_label.grid()
+    def on_close(self):
+        if self.ip:
+            self.app_ref.unregister_popup(self.ip)
+        self.destroy()
