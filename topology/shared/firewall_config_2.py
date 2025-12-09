@@ -36,6 +36,18 @@ def connect_to_gui(max_retries=100, retry_delay=1):
     print("[FIREWALL] GUI not reachable, continuing WITHOUT GUI connection.")
     return None
 
+def connect_to_gui_channel(port, desc):
+    sock = socket.socket()
+    while True:
+        try:
+            sock.connect((HOST_IP, port))
+            print(f"[FIREWALL] Connected to GUI {desc} channel on {port}")
+            return sock
+        except:
+            print(f"[FIREWALL] GUI {desc} not ready, retrying...")
+            time.sleep(1)
+
+
 class SDNFirewall(app_manager.RyuApp):
 
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -43,19 +55,23 @@ class SDNFirewall(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(SDNFirewall, self).__init__(*args, **kwargs)
         self.name = "SDNFirewall"
+        self.datapath = None
         self.listener_started_firewall = False
         self.blocked_ips = {}
         self.blacklist=set()
 
-         # STATIC RULES:
-        # - static_block_ips: manual IP blocks (never expire unless removed)
-        # - static_port_rules: manual port rules (e.g. block TCP dst_port 2020)
+        
         self.static_block_ips = set()
         # each rule: {"protocol": "TCP"/"UDP", "port": 2020, "direction": "any"|"inbound"|"outbound"}
         self.static_port_rules = []
 
-        # GUI connection so that I can receive the list of blocked ip addresses
+        # GUI connection so that can receive the list of blocked ip addresses
         self.gui_sock = connect_to_gui()
+        # Command channel for receiving commands from GUI
+        self.gui_cmd_socket = connect_to_gui_channel(6001, "command")
+        hub.spawn(self.listen_to_gui_commands)
+
+    
         # ARP table: IP -> (MAC, port)
         self.arp_table = {}
         self.mac_to_port = {}
@@ -82,10 +98,6 @@ class SDNFirewall(app_manager.RyuApp):
         self.port_scan_threshold = 10
         self.port_scan_window = 30
 
-         # Start listener for GUI commands, if connected
-        if self.gui_sock and not self.listener_started_firewall:
-            self.listener_started_firewall = True
-            hub.spawn(self.listen_to_gui)
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None, idle_timeout=0, hard_timeout=0):
         """Add flow with optional timeout"""
@@ -140,12 +152,14 @@ class SDNFirewall(app_manager.RyuApp):
             print("Sent block event to GUI:", event)
         except:
             self.logger.error("Failed to send block event to GUI.")
+            print("Failed to send block event to GUI.")
 
-    def listen_to_gui(self):
+    def listen_to_gui_commands(self):
         buffer = ""
         while True:
             try:
-                data = self.gui_sock.recv(1024)
+                print("Listening for GUI commands...")
+                data = self.gui_cmd_socket.recv(1024)
                 if not data:
                     hub.sleep(1)
                     continue
@@ -153,17 +167,15 @@ class SDNFirewall(app_manager.RyuApp):
                 buffer += data.decode()
 
                 while "\n" in buffer:
-                    print("GUI socket: {}",self.gui_sock)
+                    print("GUI socket: {}",self.gui_cmd_socket)
                     line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        cmd = json.loads(line)
-                        print("Firewall received GUI command:", cmd)
-                        self.handle_gui_command(cmd)
-                    except Exception as e:
-                        self.logger.error("Error parsing GUI command '%s': %s", line, e)
+                    if line.strip():
+                        try:
+                            cmd = json.loads(line)
+                            print("[FIREWALL] Received GUI COMMAND:", cmd)
+                            self.handle_gui_command(cmd)
+                        except Exception as e:
+                            print("[FIREWALL] Failed to parse GUI command:", e)
 
             except Exception as e:
                 print("Error in GUI listener:", e)
@@ -173,7 +185,7 @@ class SDNFirewall(app_manager.RyuApp):
     def handle_gui_command(self, cmd):
         """
         Handle JSON command from GUI.
-        "block_ip",
+                "block_ip",
                 "unblock_ip",
                 "static_block_ip",
                 "static_unblock_ip",
@@ -186,12 +198,14 @@ class SDNFirewall(app_manager.RyuApp):
         dp = self.datapath
 
         if cmd_type == "block_ip" and dp and ip:
+            print("Blocking IP from GUI command:", ip, duration)
             self.block_ip(dp, ip, duration=duration, reason="manual")
             # Notify GUI
-            #self.notify_gui_block(ip, duration, "manual")
+            self.notify_gui_block(ip, duration, "manual")
             return
         
         if cmd_type == "unblock_ip" and ip:
+            print("Unblocking IP from GUI command:", ip)
             if ip in self.blocked_ips:
                 del self.blocked_ips[ip]
             # Notify GUI (duration=0 means unblocked)
@@ -199,18 +213,21 @@ class SDNFirewall(app_manager.RyuApp):
             return
 
         if cmd_type == "static_block_ip" and dp and ip:
+            print("Statically blocking IP from GUI command:", ip)
             self.add_static_ip_block(dp, ip)
             # Static block → duration = -1
-            #self.notify_gui_block(ip, -1, "static_block")
+            self.notify_gui_block(ip, -1, "static_block")
             return
 
         if cmd_type == "static_unblock_ip" and ip:
+            print("Removing static block for IP from GUI command:", ip)
             self.remove_static_ip_block(ip)
             # Notify GUI
             self.notify_gui_block(ip, 0, "static_unblock")
             return
 
         if cmd_type == "block_port" and dp:
+            print("Blocking port from GUI command:", cmd)
             proto = cmd.get("protocol", "TCP").upper()
             port = int(cmd.get("port", 0))
             direction = cmd.get("direction", "any")
@@ -224,13 +241,13 @@ class SDNFirewall(app_manager.RyuApp):
             return
 
         if cmd_type == "unblock_port":
+            print("Unblocking port from GUI command:", cmd)
             proto = cmd.get("protocol", "TCP").upper()
             port = int(cmd.get("port", 0))
             direction = cmd.get("direction", "any")
 
             if port > 0:
                 self.remove_static_port_rule(proto, port, direction)
-
                 fake_ip = f"PORT-{proto}-{port}-{direction}"
                 self.notify_gui_block(fake_ip, 0, "static_port_unblock")
             return
@@ -272,7 +289,6 @@ class SDNFirewall(app_manager.RyuApp):
         return False
 
     # ----- STATIC IP RULES ------------------------------------------------
-
     def add_static_ip_block(self, datapath, ip):
         """Add a static IP block (never expires until manually removed)."""
         if ip in self.static_block_ips:
@@ -288,10 +304,9 @@ class SDNFirewall(app_manager.RyuApp):
         if ip in self.static_block_ips:
             self.static_block_ips.remove(ip)
             self.logger.info("STATIC IP BLOCK removed for %s", ip)
-            # You *could* send a flow-mod delete here, but not required
+            # possibly flow-mod delete here 
             return True
         return False
-
     # ----- STATIC PORT RULES ----------------------------------------------
 
     def add_static_port_rule(self, datapath, protocol, port, direction="any"):
@@ -318,7 +333,6 @@ class SDNFirewall(app_manager.RyuApp):
         match_kwargs = {
             "eth_type": ether_types.ETH_TYPE_IP,
         }
-
         if protocol.upper() == "TCP":
             match_kwargs["ip_proto"] = 6
             match_kwargs["tcp_dst"] = port
@@ -327,7 +341,6 @@ class SDNFirewall(app_manager.RyuApp):
             match_kwargs["udp_dst"] = port
 
         # Direction can be approximated by in_port: internal vs external
-        # If you want per-direction flows, you can create two flows with specific in_port.
         match = parser.OFPMatch(**match_kwargs)
         self.add_flow(datapath, 900, match, [], hard_timeout=0)  # permanent drop
         self.logger.warning("STATIC DROP FLOW installed for %s %s", protocol, port)
@@ -365,7 +378,7 @@ class SDNFirewall(app_manager.RyuApp):
             if pkt_port is None or pkt_port != port:
                 continue
 
-            # Direction heuristics: 1 = internal, 2 = external
+            # Direction : 1 = internal, 2 = external
             if direction == "any":
                 return True
             if direction == "outbound" and in_port == 1:
@@ -399,15 +412,12 @@ class SDNFirewall(app_manager.RyuApp):
 
     def detect_dos(self, datapath, src_ip, dst_ip, dst_port):
         """Detect DoS attacks based on packet rate over a sliding window."""
-
         flow_key = src_ip
         current_time = time.time()
         history = self.packet_history[flow_key]
-
         # Remove timestamps older than the window
         while history and (current_time - history[0]) > self.dos_window:
             history.popleft()
-
         # Add new timestamp
         history.append(current_time)
 
@@ -430,12 +440,10 @@ class SDNFirewall(app_manager.RyuApp):
     def detect_port_scan(self, datapath, src_ip, dst_port):
         now = time.time()
         tracking = self.port_scan_tracking[src_ip]
-
         # Rolling window update
         if now - tracking["first_time"] > self.port_scan_window:
             tracking["ports"].clear()
             tracking["first_time"] = now
-
         # Add port
         tracking["ports"].add(dst_port)
         # Detection threshold
@@ -453,6 +461,7 @@ class SDNFirewall(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
+        self.datapath = datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
@@ -464,7 +473,6 @@ class SDNFirewall(app_manager.RyuApp):
         self.logger.info("Table-miss flow installed")
 
         # 1) HIGH-PRIORITY INSPECTION RULE ON EXTERNAL PORT
-        # external is port 2 in your `self.interfaces` and in flows (in_port=eth2)
         EXTERNAL_PORT = 2
 
         match = parser.OFPMatch(
@@ -620,11 +628,8 @@ class SDNFirewall(app_manager.RyuApp):
             src = eth.src
             dst = eth.dst
             self.mac_to_port[dpid][src] = in_port
-
             out_port = self.mac_to_port[dpid].get(dst, ofp.OFPP_FLOOD)
             actions = [parser.OFPActionOutput(out_port)]
-            
-            
             if out_port != ofp.OFPP_FLOOD:
                 match = parser.OFPMatch(in_port=in_port, eth_src=src, eth_dst=dst)
                 self.add_flow(datapath, 1, match, actions)

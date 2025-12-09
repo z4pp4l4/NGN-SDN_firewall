@@ -17,7 +17,8 @@ class App(customtkinter.CTk):
 
         self.listener_started = False
         self.listener_started_firewall = False
-        self.firewall_conn = None   # Used to SEND commands to the firewall for static rules
+        self.firewall_cmd_socket = None   # NEW: command channel GUI → Firewall
+        self.firewall_event_socket = None # existing event channel Firewall → GUI
 
 
         self.open_popups = {}
@@ -57,6 +58,19 @@ class App(customtkinter.CTk):
         self.packet_view.grid(row=4, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def connect_firewall_command_channel(self):
+        """GUI listens for firewall COMMAND channel on port 6001."""
+        server = socket.socket()
+        #server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("0.0.0.0", 6001))
+        server.listen(1)
+
+        print("[GUI] Waiting for firewall COMMAND channel on 6001...")
+        conn, _ = server.accept()
+        print("[GUI] Firewall COMMAND channel connected.")
+        self.firewall_cmd_socket = conn
+
 
     def add_packet_card(self, pkt):
         ts = time.strftime("%H:%M:%S", time.localtime(pkt.time))
@@ -143,6 +157,8 @@ class App(customtkinter.CTk):
             threading.Thread(target=self.blocked_ips_listener_thread, daemon=True).start()
 
         ###maybe here add another commuication thread to send commands to firewall
+        # NEW: Start GUI → Firewall command channel    
+        threading.Thread(target=self.connect_firewall_command_channel, daemon=True).start()
 
         self.sniffer = subprocess.Popen(
             ["kathara", "exec", "s1", "--", "python3", "/shared/sniffer_switch.py"],
@@ -171,18 +187,16 @@ class App(customtkinter.CTk):
             del self.open_popups[ip]
 
     def send_firewall_command(self, event: dict):
-        """Send a JSON command to the firewall over the existing TCP connection."""
-        if not self.firewall_conn:
-            print("⚠ No firewall connection yet, cannot send command.")
+        if not self.firewall_cmd_socket:
+            print("Firewall COMMAND CHANNEL NOT CONNECTED!")
             return
 
         try:
-            print("Firewall socket:", self.firewall_conn)
             msg = json.dumps(event) + "\n"
-            self.firewall_conn.sendall(msg.encode())
+            self.firewall_cmd_socket.sendall(msg.encode())
             print("[GUI → Firewall] Sent:", msg.strip())
         except Exception as e:
-            print("❌ Error sending command to firewall:", e)
+            print(" Error sending command to firewall:", e)
 
     
     def packet_listener_thread(self):
@@ -222,7 +236,7 @@ class App(customtkinter.CTk):
                 self.packet_queue.put(pkt)
 
     def blocked_ips_listener_thread(self):
-
+        """GUI listens for BLOCK events on port 5001."""
         self.listener_started_firewall = True
 
         server = socket.socket()
@@ -230,10 +244,10 @@ class App(customtkinter.CTk):
         server.bind(("0.0.0.0", 5001))
         server.listen(1)
 
-        print("Waiting for firewall connection...")
+        print("[GUI] Waiting for firewall EVENT channel on 5001...")
         conn, _ = server.accept()
-        print("Firewall connected.")
-        self.firewall_conn = conn
+        print("[GUI] Firewall EVENT channel connected.")
+        self.firewall_event_socket = conn
 
         buffer = ""
 
@@ -247,8 +261,9 @@ class App(customtkinter.CTk):
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 if line.strip():
-                    print("[Firewall → GUI] Gui Received:", line.strip())
+                    print("[FIREWALL → GUI EVENT] Received:", line.strip())
                     self.firewall_event_queue.put(line.strip())
+
 
     def check_packet_queue(self):
         while not self.packet_queue.empty():

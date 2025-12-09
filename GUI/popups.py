@@ -15,9 +15,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
 
-        # ----------------------------------------
-        # INFO FRAME (IP/MAC + block status)
-        # ----------------------------------------
+  
         info_frame = customtkinter.CTkFrame(self)
         info_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
 
@@ -30,15 +28,9 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         self.extra_label.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
         self.extra_label.grid_remove()
 
-        # ----------------------------------------
-        # PACKET DISPLAY AREA
-        # ----------------------------------------
         self.packet_view = customtkinter.CTkScrollableFrame(self, label_text="Packets")
         self.packet_view.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
 
-        # ----------------------------------------
-        # Determine host IP / MAC
-        # ----------------------------------------
         value_cat = value.split()[0]
 
         if value_cat == "host":
@@ -132,13 +124,11 @@ class ToplevelWindow(customtkinter.CTkToplevel):
             )
             self.block_label.grid()
             return
-        # -----------------------------
-        # STATIC BLOCK (never expires)
-        # -----------------------------
+        
         print(f"[GUI Popup] Checking for static block/unblock: {event}")
         if t == "block" and duration < 0:
             self.extra_label.configure(
-                text=f"🔒 STATIC BLOCK: {reason}"
+                text=f"STATIC BLOCK: {reason}"
             )
             self.extra_label.grid()
             return

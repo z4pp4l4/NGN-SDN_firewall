@@ -12,9 +12,7 @@ class MyOverview(customtkinter.CTkScrollableFrame):
 
         self.bind("<Configure>", self._update_wrap_lengths)
 
-        # ------------------------------------------------------------
         #  COMMAND SELECTOR (Dropdown)
-        # ------------------------------------------------------------
         self.command_var = customtkinter.StringVar(value="block_ip")
 
         self.command_dropdown = customtkinter.CTkOptionMenu(
@@ -69,9 +67,7 @@ class MyOverview(customtkinter.CTkScrollableFrame):
         self.update_blocked_list()
 
 
-    # ------------------------------------------------------------
     #  DYNAMIC FIELD HANDLING
-    # ------------------------------------------------------------
     def clear_fields(self):
         for widget in self.fields_frame.winfo_children():
             widget.grid_forget()
@@ -94,10 +90,7 @@ class MyOverview(customtkinter.CTkScrollableFrame):
             self.port_entry.grid(row=1, column=0, sticky="ew", pady=5)
             self.direction_menu.grid(row=2, column=0, sticky="ew", pady=5)
 
-
-    # ------------------------------------------------------------
     #  SEND COMMAND BUTTON
-    # ------------------------------------------------------------
     def send_selected_command(self):
         cmd = self.command_var.get()
 
@@ -136,9 +129,7 @@ class MyOverview(customtkinter.CTkScrollableFrame):
         self.app_ref.send_firewall_command(event)
 
 
-    # ------------------------------------------------------------
-    #  DISPLAY BLOCKED IPs (GUI)
-    # ------------------------------------------------------------
+
     def add_blocked_ip(self, ip, duration, reason):
 
         if ip in self.blocked:
