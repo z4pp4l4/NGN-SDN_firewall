@@ -134,6 +134,25 @@ class SDNFirewall(app_manager.RyuApp):
         self.add_flow(datapath, 1000, match, [], hard_timeout=duration)
         self.logger.warning("DROP FLOW installed for %s (duration=%ds)", src_ip, duration)
     
+    def remove_drop_flow(self, datapath, src_ip):
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+        match = parser.OFPMatch(
+            eth_type=ether_types.ETH_TYPE_IP,
+            ipv4_src=src_ip
+        )
+
+        mod = parser.OFPFlowMod(
+            datapath=datapath,
+            command=ofproto.OFPFC_DELETE,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            match=match
+        )
+        datapath.send_msg(mod)
+        self.logger.warning("DROP FLOW REMOVED for %s", src_ip)
+
+
     def notify_gui_block(self, ip, duration, reason):
         print("Notifying GUI about blocked IP:", ip, duration, reason)
         if not self.gui_sock:
@@ -208,6 +227,9 @@ class SDNFirewall(app_manager.RyuApp):
             print("Unblocking IP from GUI command:", ip)
             if ip in self.blocked_ips:
                 del self.blocked_ips[ip]
+        
+            if self.datapath:
+                self.remove_drop_flow(self.datapath, ip)
             # Notify GUI (duration=0 means unblocked)
             self.notify_gui_block(ip, 0, "unblocked")
             return
@@ -222,6 +244,8 @@ class SDNFirewall(app_manager.RyuApp):
         if cmd_type == "static_unblock_ip" and ip:
             print("Removing static block for IP from GUI command:", ip)
             self.remove_static_ip_block(ip)
+            if self.datapath:
+                self.remove_drop_flow(self.datapath, ip)
             # Notify GUI
             self.notify_gui_block(ip, 0, "static_unblock")
             return
@@ -305,6 +329,7 @@ class SDNFirewall(app_manager.RyuApp):
             self.static_block_ips.remove(ip)
             self.logger.info("STATIC IP BLOCK removed for %s", ip)
             # possibly flow-mod delete here 
+            
             return True
         return False
     # ----- STATIC PORT RULES ----------------------------------------------
