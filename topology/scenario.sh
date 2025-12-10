@@ -13,17 +13,6 @@ ATTACKERS=("ext1" "ext2" "ext3" "ext4" "ext5" "ext6" "ext7")
 TARGET_IP="192.168.10.1"         # target inside internal subnet
 TARGET_PORT="2020"               # monitored port in firewall
 
-# Pre-populate ARP tables
-echo "[INFO] Warming up ARP caches..."
-for i in 1 2 3; do
-  for j in 1 2 3 4 5 6 7; do
-      kathara exec h$i -- ping -c1 -W1 192.168.20.$((j+1)) >/dev/null 2>&1
-  done
-  echo "h$i completed..."
-done
-echo "[INFO] ARP warm-up completed."
-echo
-
 # 1. NORMAL BASELINE TRAFFIC
 echo "[STEP 1] Sending normal traffic..."
 kathara exec h1 -- nc -zvw1 $TARGET_IP $TARGET_PORT 
@@ -115,7 +104,6 @@ sleep 15
 echo
 
 # 9) PORTSCAN TIMEOUT TEST
-
 echo "[STEP 10] Checking if ext2 is UNBLOCKED after timeout..."
 kathara exec ext2 -- nc -zvw1 $TARGET_IP 2020
 if [ $? -eq 0 ]; then
@@ -124,6 +112,7 @@ else
     echo "[FAIL] ext2 is STILL blocked!"
 fi
 echo
+
 
 echo "------------------------------------------------"
 echo "[INFO] Scenario test completed (DoS + Port Scan)."

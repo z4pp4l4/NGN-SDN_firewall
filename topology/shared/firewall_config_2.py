@@ -7,7 +7,6 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet, ether_types
 from ryu.lib.packet import ipv4, arp, tcp, udp, icmp
-from ryu.lib.packet import ipv4, arp, tcp, udp, icmp
 from ryu.ofproto import ether
 
 import ipaddress

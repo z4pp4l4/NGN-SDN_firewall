@@ -179,6 +179,10 @@ class App(customtkinter.CTk):
             stderr=subprocess.PIPE,
             text=True
         )
+        print("waiting 15 seconds for the whole environment to boot up...")
+        time.sleep(15)
+        print("Starting ARP warm-up...")
+        subprocess.run(["bash", "./ARP_warmup.sh"], cwd="../topology/")
 
     def register_popup(self, ip, popup_window):
         self.open_popups[ip] = popup_window
