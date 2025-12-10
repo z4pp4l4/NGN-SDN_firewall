@@ -2,17 +2,21 @@
 import customtkinter
 import time
 
-class MyOverview(customtkinter.CTkScrollableFrame):
+class MyOverview(customtkinter.CTkFrame):
     def __init__(self, master, title, app_ref):
-        super().__init__(master, label_text=title)
-        self.grid_columnconfigure(0, weight=1)
+        super().__init__(master)
+        self.grid_columnconfigure((0,1,2,3), weight=1)
+        self.title_label = customtkinter.CTkLabel(
+            self,
+            text=title,
+            font=customtkinter.CTkFont(size=20, weight="bold"),
+            text_color=("gray10", "gray90")
+        )
+        self.title_label.grid(row=0, column=0, columnspan=4, pady=(10, 5))
 
         self.app_ref = app_ref
         self.blocked = {}
 
-        self.bind("<Configure>", self._update_wrap_lengths)
-
-        #  COMMAND SELECTOR (Dropdown)
         self.command_var = customtkinter.StringVar(value="block_ip")
 
         self.command_dropdown = customtkinter.CTkOptionMenu(
@@ -28,12 +32,12 @@ class MyOverview(customtkinter.CTkScrollableFrame):
             variable=self.command_var,
             command=self.update_fields_for_command
         )
-        self.command_dropdown.grid(row=0, column=0, padx=10, pady=(10,5), sticky="ew")
+        self.command_dropdown.grid(row=1, column=0, padx=10, pady=(10,5), sticky="ew",columnspan=2)
 
         # Frame that will contain dynamic input fields:
         self.fields_frame = customtkinter.CTkFrame(self)
-        self.fields_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        self.fields_frame.grid_columnconfigure(0, weight=1)
+        self.fields_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        self.fields_frame.grid_columnconfigure(2, weight=1)
 
         # Create all possible input widgets:
         self.ip_entry = customtkinter.CTkEntry(self.fields_frame, placeholder_text="IP address")
@@ -56,16 +60,39 @@ class MyOverview(customtkinter.CTkScrollableFrame):
             text="Send Command",
             command=self.send_selected_command
         )
-        self.send_btn.grid(row=2, column=0, padx=10, pady=(5,10), sticky="ew")
+        self.send_btn.grid(row=3, column=0, padx=10, pady=(5,10), sticky="ew", columnspan=2)
 
         # Blocked IP display starts at this row
         self.base_row = 3
 
         # Show initial field layout
         self.update_fields_for_command("block_ip")
+        self.blocked_frame = customtkinter.CTkScrollableFrame(
+            self,
+            label_text="Blocked IP Addresses"
+        )
+        self.blocked_frame.bind("<Configure>", self._update_blocked_label_wrap)
+        self.blocked_frame.grid(
+            row=4, column=0,
+            sticky="nsew",
+            padx=10, pady=10,
+            columnspan=4
+        )
+
+        self.blocked_frame.grid_columnconfigure((0,1,2,3), weight=1)
 
         self.update_blocked_list()
 
+    def _update_blocked_label_wrap(self, event=None):
+        # How wide the scrollable frame is
+        width = self.blocked_frame.winfo_width()
+
+        # Give labels some padding margin so they don't touch the sides
+        wrap = max(width - 40, 50)  # 50px minimum wraplength
+
+        # Update wrap for all blocked-IP labels
+        for ip, data in self.blocked.items():
+            data["label"].configure(wraplength=wrap)
 
     #  DYNAMIC FIELD HANDLING
     def clear_fields(self):
@@ -79,16 +106,16 @@ class MyOverview(customtkinter.CTkScrollableFrame):
 
         # Commands requiring only IP
         if cmd in ("block_ip","unblock_ip","static_block_ip","static_unblock_ip"):
-            self.ip_entry.grid(row=0, column=0, sticky="ew", pady=5)
+            self.ip_entry.grid(row=0, column=0, sticky="ew", pady=5,columnspan=2)
 
             if cmd == "block_ip":  # dynamic timed block
-                self.duration_entry.grid(row=1, column=0, sticky="ew", pady=5)
+                self.duration_entry.grid(row=1, column=0, sticky="ew", pady=5,columnspan=2)
 
         # Commands requiring PORT + PROTOCOL (+ optional direction)
         elif cmd in ("block_port","unblock_port"):
-            self.protocol_menu.grid(row=0, column=0, sticky="ew", pady=5)
-            self.port_entry.grid(row=1, column=0, sticky="ew", pady=5)
-            self.direction_menu.grid(row=2, column=0, sticky="ew", pady=5)
+            self.protocol_menu.grid(row=0, column=0, sticky="ew", pady=5, columnspan=2)
+            self.port_entry.grid(row=1, column=0, sticky="ew", pady=5, columnspan=2)
+            self.direction_menu.grid(row=2, column=0, sticky="ew", pady=5, columnspan=2)
 
     #  SEND COMMAND BUTTON
     def send_selected_command(self):
@@ -130,6 +157,7 @@ class MyOverview(customtkinter.CTkScrollableFrame):
 
 
 
+
     def add_blocked_ip(self, ip, duration, reason):
 
         if ip in self.blocked:
@@ -143,9 +171,14 @@ class MyOverview(customtkinter.CTkScrollableFrame):
         else:
             text = f"{ip} — BLOCKED for {duration}s due to {reason.upper()}"
 
-        label = customtkinter.CTkLabel(self, text=text, text_color="red", wraplength=1)
-        row = self.base_row + len(self.blocked)
-        label.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        label = customtkinter.CTkLabel(
+            self.blocked_frame,
+            text=text,
+            text_color="red",
+            wraplength=1
+        )
+        row = len(self.blocked)
+        label.grid(row=row, column=0, sticky="ew", padx=10, pady=5, columnspan=4)
 
         self.blocked[ip] = {
             "reason": reason,
@@ -153,6 +186,39 @@ class MyOverview(customtkinter.CTkScrollableFrame):
             "timestamp": time.time(),
             "label": label,
             "expired": False
+        }
+    def remove_blocked_ip(self, ip, reason="manual"):
+        if ip not in self.blocked:
+            return  # Nothing to remove
+
+        data = self.blocked[ip]
+        old_label = data["label"]
+
+        # Remove or hide the old blocked label
+        old_label.grid_forget()
+
+        # Create new green 'unblocked' label
+        ts = time.strftime("%H:%M:%S")
+        text = f"{ip} was UNBLOCKED at {ts} due to {reason.upper()}"
+
+        new_label = customtkinter.CTkLabel(
+            self.blocked_frame,
+            text=text,
+            text_color="green",
+            wraplength=1
+        )
+
+        # Place it in the same position (replace old label)
+        row = list(self.blocked.keys()).index(ip)
+        new_label.grid(row=row, column=0, sticky="ew", padx=10, pady=5, columnspan=4)
+
+        # Save updated entry
+        self.blocked[ip] = {
+            "reason": reason,
+            "duration": 0,
+            "timestamp": time.time(),
+            "label": new_label,
+            "expired": True
         }
 
 
@@ -163,10 +229,6 @@ class MyOverview(customtkinter.CTkScrollableFrame):
         self.blocked[ip]["expired"] = False
 
 
-    def _update_wrap_lengths(self, event):
-        for ip, data in self.blocked.items():
-            label = data["label"]
-            label.configure(wraplength=self.winfo_width() - 40)
 
 
     def update_blocked_list(self):

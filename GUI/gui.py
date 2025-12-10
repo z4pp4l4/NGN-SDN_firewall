@@ -23,6 +23,12 @@ class App(customtkinter.CTk):
 
         self.open_popups = {}
 
+        self.packet_stats = {}      # { "ARP": {count:int, ts:str}, ... }
+        self.packet_cards = {}      # card widgets per protocol
+
+        self.ip_packet_stats = {}
+
+
         self.packet_history = {}
         self.block_history = {}
 
@@ -91,28 +97,34 @@ class App(customtkinter.CTk):
             proto = "OTHER"
             color = "#000000"
 
-        src = pkt[scapy.IP].src if pkt.haslayer(scapy.IP) else ""
-        dst = pkt[scapy.IP].dst if pkt.haslayer(scapy.IP) else ""
-        summary = pkt.summary()
+        if proto not in self.packet_stats:
+            self.packet_stats[proto] = {"count": 0, "ts": ts}
+        self.packet_stats[proto]["count"] += 1
+        self.packet_stats[proto]["ts"] = ts
 
-        card = customtkinter.CTkFrame(self.packet_view, corner_radius=10)
-        card.pack(fill="x", padx=5, pady=5)
+        # if no card exists → create one
+        if proto not in self.packet_cards:
+            card = customtkinter.CTkFrame(self.packet_view, corner_radius=10)
+            card.pack(fill="x", padx=5, pady=5)
 
-        top_row = customtkinter.CTkFrame(card, fg_color="transparent")
-        top_row.pack(fill="x")
+            top = customtkinter.CTkFrame(card, fg_color="transparent")
+            top.pack(fill="x")
 
-        customtkinter.CTkLabel(top_row, text=ts, font=("Arial", 14, "bold")).pack(side="left", padx=5)
+            proto_label = customtkinter.CTkLabel(
+                top, text=f"[{proto}]", font=("Arial", 14), text_color=color
+            )
+            proto_label.pack(side="left", padx=10)
 
-        customtkinter.CTkLabel(
-            top_row, text=f"[{proto}]", font=("Arial", 14), text_color=color
-        ).pack(side="left", padx=10)
+            info_label = customtkinter.CTkLabel(card, font=("Arial", 13))
+            info_label.pack(anchor="w", padx=10)
 
-        flow_text = f"{src}  →  {dst}"
-        customtkinter.CTkLabel(card, text=flow_text, font=("Arial", 13)).pack(anchor="w", padx=10)
+            self.packet_cards[proto] = info_label
 
-        customtkinter.CTkLabel(
-            card, text=summary, font=("Arial", 12), text_color="#666666"
-        ).pack(anchor="w", padx=10, pady=(0, 5))
+        # update the displayed text (super fast)
+        info = self.packet_stats[proto]
+        self.packet_cards[proto].configure(
+            text=f"Count: {info['count']}   Last packet: {info['ts']}"
+        )
 
     def on_close(self):
         subprocess.run(["bash", "./stop-lab.sh"], cwd="../topology/")
@@ -171,15 +183,50 @@ class App(customtkinter.CTk):
     def register_popup(self, ip, popup_window):
         self.open_popups[ip] = popup_window
 
-        # --- show only the LAST PACKET ---
-        if ip in self.packet_history and self.packet_history[ip]:
-            last_pkt = self.packet_history[ip][-1]
-            popup_window.add_packet_card(last_pkt)
+        if ip in self.ip_packet_stats:
+            popup_window.load_packet_stats(self.ip_packet_stats[ip])
 
-        # --- show only the LAST BLOCK EVENT ---
-        if ip in self.block_history and self.block_history[ip]:
-            last_duration, last_reason = self.block_history[ip][-1]
-            popup_window.set_block_info(last_duration, last_reason)
+        if ip not in self.block_history or not self.block_history[ip]:
+            return  # No history → nothing to restore
+
+        last_event = self.block_history[ip][-1]
+        event_type = last_event["type"]
+        duration = last_event.get("duration", 0)
+        reason = last_event.get("reason", "")
+        timestamp = last_event.get("timestamp", time.time())
+        now = time.time()
+
+        # Handle static block
+        if event_type == "block" and duration < 0:
+            popup_window.set_block_info(duration, reason)
+            return
+
+        # Handle timed block
+        if event_type == "block" and duration > 0:
+            elapsed = now - timestamp
+            remaining = duration - elapsed
+
+            if remaining <= 0:
+                # Block already expired
+                popup_window.show_unblocked_label("timeout")
+            else:
+                # Block still active → restore countdown & label
+                popup_window.block_start_time = timestamp
+                popup_window.block_end_time = timestamp + duration
+                popup_window.set_block_info(remaining, reason)
+                popup_window.after(int(remaining * 1000),
+                    lambda: popup_window.show_unblocked_label("timeout"))
+            return
+
+        # Handle unblock event
+        if event_type == "unblock":
+            popup_window.show_unblocked_label(reason)
+            if ip in self.block_history:
+                self.block_history[ip] = []
+                self.block_history[ip].append(last_event)
+
+            return
+
 
 
     def unregister_popup(self, ip):
@@ -274,12 +321,40 @@ class App(customtkinter.CTk):
             self.add_packet_card(pkt)
 
             if src_ip:
+                ts = time.strftime("%H:%M:%S", time.localtime(pkt.time))
+
+                if src_ip not in self.ip_packet_stats:
+                    self.ip_packet_stats[src_ip] = {}
+
+                # Determine protocol
+                if pkt.haslayer(scapy.ARP):
+                    proto = "ARP"
+                elif pkt.haslayer(scapy.ICMP):
+                    proto = "ICMP"
+                elif pkt.haslayer(scapy.TCP):
+                    proto = "TCP"
+                elif pkt.haslayer(scapy.UDP):
+                    proto = "UDP"
+                else:
+                    proto = "OTHER"
+
+                # Update per-protocol stats
+                if proto not in self.ip_packet_stats[src_ip]:
+                    self.ip_packet_stats[src_ip][proto] = {"count": 0, "ts": ts}
+
+                self.ip_packet_stats[src_ip][proto]["count"] += 1
+                self.ip_packet_stats[src_ip][proto]["ts"] = ts
+
                 if src_ip not in self.packet_history:
                     self.packet_history[src_ip] = []
                 self.packet_history[src_ip].append(pkt)
 
                 if len(self.packet_history[src_ip]) > 500:
                     self.packet_history[src_ip] = self.packet_history[src_ip][-500:]
+
+                for popup_ip, popup in self.open_popups.items():
+                    if popup_ip == src_ip:
+                        popup.load_packet_stats(self.ip_packet_stats[src_ip])
 
 
         self.after(50, self.check_packet_queue)
@@ -293,16 +368,32 @@ class App(customtkinter.CTk):
                 ip = event["ip"]
                 duration = event["duration"]
                 reason = event["reason"]
+                event["timestamp"] = time.time()
 
                 print(f"[GUI] IP {ip} BLOCKED for {duration}s due to {reason}")
                 self.scrollable_checkbox_frame.add_blocked_ip(ip, duration, reason)
 
                 if ip not in self.block_history:
                     self.block_history[ip] = []
-                self.block_history[ip].append((duration, reason))
+                self.block_history[ip].append(event)
 
                 if len(self.block_history[ip]) > 100:
                     self.block_history[ip] = self.block_history[ip][-100:]
+
+                for popup in self.open_popups.values():
+                    popup.apply_firewall_event(event)
+            elif event.get("type") == "unblock":
+                ip = event["ip"]
+                duration = 0
+                if "duration" in event:
+                    duration = event["duration"]
+                reason = event["reason"]
+
+                print(f"[GUI] IP {ip} UNBLOCKED due to {reason}")
+                self.scrollable_checkbox_frame.remove_blocked_ip(ip, reason)
+                if ip in self.block_history:
+                    self.block_history[ip].append(event)
+
 
                 for popup in self.open_popups.values():
                     popup.apply_firewall_event(event)
