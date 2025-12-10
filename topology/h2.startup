@@ -4,4 +4,4 @@ ip link set eth0 up
 route add default gw 192.168.10.4
 
 nc -l -k -p 2020 >/dev/null 2>&1 &
-
+nc -l -k -p 2021 >/dev/null 2>&1 &

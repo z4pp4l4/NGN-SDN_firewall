@@ -3,3 +3,4 @@ ip addr add 192.168.20.2/28 dev eth0
 route add default gw 192.168.20.8
 ip link set eth0 up
 nc -l -k -p 2020 >/dev/null 2>&1 &
+nc -l -k -p 2021 >/dev/null 2>&1 &

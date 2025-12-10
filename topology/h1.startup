@@ -6,5 +6,5 @@ route add default gw 192.168.10.4
 
 # Persistent TCP Server using OpenBSD nc 
 nc -l -k -p 2020 >/dev/null 2>&1 &
-
+nc -l -k -p 2021 >/dev/null 2>&1 &
 
