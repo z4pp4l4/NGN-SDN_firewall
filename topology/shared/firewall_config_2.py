@@ -181,18 +181,25 @@ class SDNFirewall(app_manager.RyuApp):
         self.logger.warning("PORT DROP FLOW REMOVED for %s %d", protocol, port)
 
 
-    def notify_gui_block(self, ip, duration, reason):
+    def notify_gui_block(self, ip, type, duration, reason):
         print("Notifying GUI about blocked IP:", ip, duration, reason)
         if not self.gui_sock:
             return   # GUI not connected, ignore
         #Sending event to GUI 
-        event = {
-            "type": "block",
-            "ip": ip,
-            "duration": duration,
-            "reason": reason
-        }
-    
+        if type=="block":
+            event = {
+                "type": type,
+                "ip": ip,
+                "duration": duration,
+                "reason": reason
+            }
+        elif type=="unblock":
+            event = {
+                "type": type,
+                "ip": ip,
+                "reason": reason
+            }
+        
         try:
             print("notify socket:", self.gui_sock)
             self.gui_sock.sendall((json.dumps(event) + "\n").encode())
@@ -248,7 +255,7 @@ class SDNFirewall(app_manager.RyuApp):
             print("Blocking IP from GUI command:", ip, duration)
             self.block_ip(dp, ip, duration=duration, reason="manual")
             # Notify GUI
-            self.notify_gui_block(ip, duration, "manual")
+            self.notify_gui_block("block",ip, duration, "manual")
             return
         
         if cmd_type == "unblock_ip" and ip:
@@ -259,14 +266,14 @@ class SDNFirewall(app_manager.RyuApp):
             if self.datapath:
                 self.remove_drop_flow(self.datapath, ip)
             # Notify GUI (duration=0 means unblocked)
-            self.notify_gui_block(ip, 0, "unblocked")
+            self.notify_gui_block(ip,"block", 0, "unblocked")
             return
 
         if cmd_type == "static_block_ip" and dp and ip:
             print("Statically blocking IP from GUI command:", ip)
             self.add_static_ip_block(dp, ip)
             # Static block → duration = -1
-            self.notify_gui_block(ip, -1, "static_block")
+            self.notify_gui_block(ip, "block", -1, "static_block")
             return
 
         if cmd_type == "static_unblock_ip" and ip:
@@ -275,7 +282,7 @@ class SDNFirewall(app_manager.RyuApp):
             if self.datapath:
                 self.remove_drop_flow(self.datapath, ip)
             # Notify GUI
-            self.notify_gui_block(ip, 0, "static_unblock")
+            self.notify_gui_block(ip, "unblock", 0, "static_unblock")
             return
 
         if cmd_type == "block_port" and dp:
@@ -289,7 +296,7 @@ class SDNFirewall(app_manager.RyuApp):
 
                 # Use a synthetic "IP" key so GUI can show popups
                 fake_ip = f"PORT-{proto}-{port}-{direction}"
-                self.notify_gui_block(fake_ip, -1, "static_port")
+                self.notify_gui_block(fake_ip, "block", -1, "static_port")
             return
 
         if cmd_type == "unblock_port":
@@ -301,7 +308,6 @@ class SDNFirewall(app_manager.RyuApp):
             if port > 0:
                 self.remove_static_port_rule(proto, port, direction)
                 fake_ip = f"PORT-{proto}-{port}-{direction}"
-                self.notify_gui_block(fake_ip, 0, "static_port_unblock")
             return
 
 
@@ -312,7 +318,7 @@ class SDNFirewall(app_manager.RyuApp):
 
         self.blocked_ips[src_ip] = time.time() + duration
         self.add_drop_flow(datapath, src_ip, duration)
-        self.notify_gui_block(src_ip, duration, reason)
+        self.notify_gui_block(src_ip, "block", duration, reason)
 
         self.logger.warning("BLOCKED IP %s for %ds (%s)", src_ip, duration, reason)
        
@@ -348,7 +354,7 @@ class SDNFirewall(app_manager.RyuApp):
         self.static_block_ips.add(ip)
         # static rule: use 0 hard_timeout => permanent
         self.add_drop_flow(datapath, ip, duration=0)
-        self.notify_gui_block(ip, duration=-1, reason="static")
+        self.notify_gui_block(ip, "block", duration=-1, reason="static")
         self.logger.warning("STATIC IP BLOCK added for %s", ip)
 
     def remove_static_ip_block(self, ip):
@@ -374,11 +380,6 @@ class SDNFirewall(app_manager.RyuApp):
 
         self.static_port_rules.append(rule)
         self.logger.warning("STATIC PORT RULE added: %s", rule)
-        self.notify_gui_block(
-            ip=f"PORT-{protocol.upper()}-{port}",
-            duration=-1,                   # static rule = infinite
-            reason=f"static_port_{direction}"
-        )
 
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
@@ -413,6 +414,7 @@ class SDNFirewall(app_manager.RyuApp):
             # Explicit flow removal could be implemented here if needed
             self.notify_gui_block(
                 ip=f"PORT-{protocol.upper()}-{port}",
+                type = "unblock",
                 duration=0,
                 reason="port_unblocked"
             )
@@ -448,7 +450,7 @@ class SDNFirewall(app_manager.RyuApp):
         """Permanently blacklist an IP."""
         self.blacklist.add(src_ip)
         self.logger.warning("BLACKLISTED IP: %s (permanent)", src_ip)
-        self.notify_gui_block(src_ip, duration=-1, reason="blacklist")
+        self.notify_gui_block(src_ip, "block", duration=-1, reason="blacklist")
 
     def remove_from_blacklist(self, src_ip):
         """Remove IP from permanent blacklist."""
@@ -505,7 +507,7 @@ class SDNFirewall(app_manager.RyuApp):
         if len(tracking["ports"]) >= self.port_scan_threshold:
             self.logger.warning(f"PORT SCAN DETECTED from {src_ip}: {len(tracking['ports'])} unique ports")
             # Notify GUI immediately
-            #self.notify_gui_block(src_ip, duration=10, reason="port_scan_detected")
+            #self.notify_gui_block(src_ip, "block", duration=10, reason="port_scan_detected")
             # Temporary block
             self.block_ip(datapath, src_ip, duration=20, reason="port_scan")
             return True

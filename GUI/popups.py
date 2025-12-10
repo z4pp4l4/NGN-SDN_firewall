@@ -11,6 +11,9 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         self.geometry("420x480")
         self.title(value)
         self.resizable(False, False)
+        self.packet_stats = {}      # { "ARP": {count:int, ts:str}, ... }
+        self.packet_cards = {}      # card widgets per protocol
+
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
@@ -84,60 +87,134 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         else:
             proto, color = "OTHER", "#000000"
 
-        src = pkt[scapy.IP].src if pkt.haslayer(scapy.IP) else ""
-        dst = pkt[scapy.IP].dst if pkt.haslayer(scapy.IP) else ""
+        if proto not in self.packet_stats:
+            self.packet_stats[proto] = {"count": 0, "ts": ts}
+        self.packet_stats[proto]["count"] += 1
+        self.packet_stats[proto]["ts"] = ts
 
-        summary = pkt.summary()
+        # if no card exists → create one
+        if proto not in self.packet_cards:
+            card = customtkinter.CTkFrame(self.packet_view, corner_radius=10)
+            card.pack(fill="x", padx=5, pady=5)
 
-        card = customtkinter.CTkFrame(self.packet_view, corner_radius=10)
-        card.pack(fill="x", padx=5, pady=5)
+            top = customtkinter.CTkFrame(card, fg_color="transparent")
+            top.pack(fill="x")
 
-        top_row = customtkinter.CTkFrame(card, fg_color="transparent")
-        top_row.pack(fill="x")
+            proto_label = customtkinter.CTkLabel(
+                top, text=f"[{proto}]", font=("Arial", 14), text_color=color
+            )
+            proto_label.pack(side="left", padx=10)
 
-        customtkinter.CTkLabel(top_row, text=ts, font=("Arial", 14, "bold")).pack(side="left", padx=5)
-        customtkinter.CTkLabel(top_row, text=f"[{proto}]", font=("Arial", 14), text_color=color).pack(side="left", padx=10)
+            info_label = customtkinter.CTkLabel(card, font=("Arial", 13))
+            info_label.pack(anchor="w", padx=10)
 
-        customtkinter.CTkLabel(card, text=f"{src} → {dst}", font=("Arial", 13)).pack(anchor="w", padx=10)
-        customtkinter.CTkLabel(card, text=summary, font=("Arial", 12), text_color="#666666").pack(anchor="w", padx=10, pady=(0, 5))
+            self.packet_cards[proto] = info_label
+
+        # update the displayed text (super fast)
+        info = self.packet_stats[proto]
+        self.packet_cards[proto].configure(
+            text=f"Count: {info['count']}   Last packet: {info['ts']}"
+        )
 
     def apply_firewall_event(self, event):
         t = event.get("type")
         ip = event.get("ip")
         reason = event.get("reason", "").upper()
         duration = event.get("duration", 0)
-        print(f"[GUI Popup] Applying firewall event: {event}")
-        # POPUP ONLY reacts to events related to THIS IP
+
         if ip != self.ip:
             return
 
+        # Proper block event handling
         if t == "block" and duration > 0:
-            self.block_label.configure(
-                text=f" BLOCKED: {reason} for {duration}s"
-            )
-            self.block_label.grid()
+            self.block_start_time = time.time()
+            self.block_end_time = self.block_start_time + duration
+            self.set_block_info(duration, reason)
+            self.after(int(duration * 1000), lambda: self.show_unblocked_label(reason="timeout"))
+            if ip in self.app_ref.block_history:
+                del self.app_ref.block_history[ip]
             return
 
+        # Unblock event from firewall
         if t == "unblock":
-            self.block_label.configure(
-                text=f" UNBLOCKED: {reason}"
-            )
-            self.block_label.grid()
-            return
-        
-        print(f"[GUI Popup] Checking for static block/unblock: {event}")
-        if t == "block" and duration < 0:
-            self.extra_label.configure(
-                text=f"STATIC BLOCK: {reason}"
-            )
-            self.extra_label.grid()
+            self.show_unblocked_label(reason)
+            if ip in self.app_ref.block_history:
+                self.app_ref.block_history[ip] = []
+                self.app_ref.block_history[ip].append(event)
+            
             return
 
-    def set_block_info(self, duration, reason):
-        msg = f"⚠ BLOCKED: {reason.upper()} for {duration}s"
-        self.block_label.configure(text=msg)
+        # Static rules
+        if t == "block" and duration < 0:
+            self.set_block_info(duration, reason)
+            return
+
+
+    def show_unblocked_label(self, reason="manual"):
+        ts = time.strftime("%H:%M:%S")
+        self.block_label.configure(
+            text=f" UNBLOCKED ({reason.upper()}) at {ts}",
+            text_color="green"
+        )
         self.block_label.grid()
+    def set_block_info(self, duration, reason):
+        if duration <= 0:
+            msg = f"STATIC BLOCK RULE due to {reason.upper()}"
+            self.block_label.configure(text=msg, text_color="red")
+            self.block_label.grid()
+            return
+
+        reason = reason.upper()
+        # Show block label immediately
+        msg = f"BLOCKED: {reason} for {int(duration)}s"
+        self.block_label.configure(text=msg, text_color="red")
+        self.block_label.grid()
+
+
+
     def on_close(self):
         if self.ip:
             self.app_ref.unregister_popup(self.ip)
         self.destroy()
+    def load_packet_stats(self, stats):
+        # Initialize storage if needed
+        if not hasattr(self, "packet_cards"):
+            self.packet_cards = {}
+
+        for proto, data in stats.items():
+            count = data["count"]
+            ts = data["ts"]
+
+            # Set default colors for protocols
+            colors = {
+                "ARP": "#FFA500",
+                "ICMP": "#0000FF",
+                "TCP": "#FF0000",
+                "UDP": "#008000",
+                "OTHER": "#000000"
+            }
+            color = colors.get(proto, "#000000")
+
+            # Create card if missing
+            if proto not in self.packet_cards:
+                card = customtkinter.CTkFrame(self.packet_view, corner_radius=10)
+                card.pack(fill="x", padx=5, pady=5)
+
+                top = customtkinter.CTkFrame(card, fg_color="transparent")
+                top.pack(fill="x")
+
+                proto_label = customtkinter.CTkLabel(
+                    top, text=f"[{proto}]", font=("Arial",14), text_color=color
+                )
+                proto_label.pack(side="left", padx=10)
+
+                info_label = customtkinter.CTkLabel(card, font=("Arial", 13))
+                info_label.pack(anchor="w", padx=10)
+
+                self.packet_cards[proto] = info_label
+
+            # Update card text
+            self.packet_cards[proto].configure(
+                text=f"Count: {count}   Last packet: {ts}"
+            )
+
