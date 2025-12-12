@@ -288,13 +288,12 @@ class SDNFirewall(app_manager.RyuApp):
             print("Blocking port from GUI command:", cmd)
             proto = cmd.get("protocol", "TCP").upper()
             port = int(cmd.get("port", 0))
-            direction = cmd.get("direction", "any")
+            #direction = cmd.get("direction", "any")
 
             if port > 0:
-                self.add_static_port_rule(dp, proto, port, direction)
-
+                self.add_static_port_rule(dp, proto, port)
                 # Use a synthetic "IP" key so GUI can show popups
-                fake_ip = f"PORT-{proto}-{port}-{direction}"
+                fake_ip = f"PORT-{proto}-{port}"
                 self.notify_gui_block(fake_ip, "block", -1, "static_port")
             return
 
@@ -302,11 +301,11 @@ class SDNFirewall(app_manager.RyuApp):
             print("Unblocking port from GUI command:", cmd)
             proto = cmd.get("protocol", "TCP").upper()
             port = int(cmd.get("port", 0))
-            direction = cmd.get("direction", "any")
+            #direction = cmd.get("direction", "any")
 
             if port > 0:
-                self.remove_static_port_rule(proto, port, direction)
-                fake_ip = f"PORT-{proto}-{port}-{direction}"
+                self.remove_static_port_rule(proto, port)
+                fake_ip = f"PORT-{proto}-{port}"
             return
 
 
@@ -367,12 +366,11 @@ class SDNFirewall(app_manager.RyuApp):
         return False
     # ----- STATIC PORT RULES ----------------------------------------------
 
-    def add_static_port_rule(self, datapath, protocol, port, direction="any"):
+    def add_static_port_rule(self, datapath, protocol, port):
         """Add static rule to block traffic by port (e.g. TCP dst_port 2020)."""
         rule = {
             "protocol": protocol.upper(),
             "port": port,
-            "direction": direction  # "any" | "inbound" | "outbound"
         }
         if rule in self.static_port_rules:
             return
@@ -398,12 +396,11 @@ class SDNFirewall(app_manager.RyuApp):
         self.add_flow(datapath, 900, match, [], hard_timeout=0)  # permanent drop
         self.logger.warning("STATIC DROP FLOW installed for %s %s", protocol, port)
 
-    def remove_static_port_rule(self, protocol, port, direction="any"):
+    def remove_static_port_rule(self, protocol, port):
         """Remove a static port rule from local list (flows will persist until restart)."""
         rule = {
             "protocol": protocol.upper(),
             "port": port,
-            "direction": direction
         }
         if rule in self.static_port_rules:
             self.static_port_rules.remove(rule)
@@ -418,28 +415,14 @@ class SDNFirewall(app_manager.RyuApp):
                 reason="port_unblocked"
             )
 
-    def matches_static_port_rule(self, in_port, src_ip, dst_ip, tcp_pkt, udp_pkt):
+    def matches_static_port_rule(self, tcp_pkt, udp_pkt):
         """Check packet against static port rules (software check)."""
         for rule in self.static_port_rules:
             proto = rule["protocol"]
             port = rule["port"]
-            direction = rule["direction"]
-
-            pkt_port = None
-            if proto == "TCP" and tcp_pkt:
-                pkt_port = tcp_pkt.dst_port
-            elif proto == "UDP" and udp_pkt:
-                pkt_port = udp_pkt.dst_port
-
-            if pkt_port is None or pkt_port != port:
-                continue
-
-            # Direction : 1 = internal, 2 = external
-            if direction == "any":
+            if proto == "TCP" and tcp_pkt and tcp_pkt.dst_port == port:
                 return True
-            if direction == "outbound" and in_port == 1:
-                return True
-            if direction == "inbound" and in_port == 2:
+            if proto == "UDP" and udp_pkt and udp_pkt.dst_port == port:
                 return True
 
         return False
@@ -721,7 +704,7 @@ class SDNFirewall(app_manager.RyuApp):
             dst_port = udp_pkt.dst_port
 
         # STATIC PORT RULES (e.g. block TCP dst_port 2020)
-        if self.matches_static_port_rule(in_port, src_ip, dst_ip, tcp_pkt, udp_pkt):
+        if self.matches_static_port_rule(tcp_pkt, udp_pkt):
             self.logger.warning(
                 "STATIC PORT RULE DROP: %s -> %s (port %s, in_port %d)",
                 src_ip, dst_ip, dst_port, in_port

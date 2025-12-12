@@ -49,10 +49,6 @@ class MyOverview(customtkinter.CTkFrame):
             self.fields_frame, values=["TCP","UDP"], variable=self.protocol_var
         )
 
-        self.direction_var = customtkinter.StringVar(value="any")
-        self.direction_menu = customtkinter.CTkOptionMenu(
-            self.fields_frame, values=["any","inbound","outbound"], variable=self.direction_var
-        )
 
         # Action button
         self.send_btn = customtkinter.CTkButton(
@@ -115,7 +111,7 @@ class MyOverview(customtkinter.CTkFrame):
         elif cmd in ("block_port","unblock_port"):
             self.protocol_menu.grid(row=0, column=0, sticky="ew", pady=5, columnspan=2)
             self.port_entry.grid(row=1, column=0, sticky="ew", pady=5, columnspan=2)
-            self.direction_menu.grid(row=2, column=0, sticky="ew", pady=5, columnspan=2)
+
 
     #  SEND COMMAND BUTTON
     def send_selected_command(self):
@@ -141,21 +137,16 @@ class MyOverview(customtkinter.CTkFrame):
 
         elif cmd in ("block_port","unblock_port"):
             proto = self.protocol_var.get()
-            direction = self.direction_var.get()
             port_text = self.port_entry.get().strip()
-
             if not port_text.isdigit():
                 print("❌ Invalid port")
                 return
 
             event["protocol"] = proto
             event["port"] = int(port_text)
-            event["direction"] = direction
 
         print("[GUI → Firewall] Sending:", event)
         self.app_ref.send_firewall_command(event)
-
-
 
 
     def add_blocked_ip(self, ip, duration, reason):
