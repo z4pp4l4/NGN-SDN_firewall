@@ -11,8 +11,8 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         self.geometry("420x480")
         self.title(value)
         self.resizable(False, False)
-        self.packet_stats = {}      # { "ARP": {count:int, ts:str}, ... }
-        self.packet_cards = {}      # card widgets per protocol
+        self.packet_stats = {}      
+        self.packet_cards = {}    
 
 
         self.grid_columnconfigure(0, weight=1)
@@ -26,7 +26,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         self.block_label.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
         self.block_label.grid_remove()
 
-        # NEW — label for static/port rules
+        
         self.extra_label = customtkinter.CTkLabel(self, text="", text_color="orange")
         self.extra_label.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
         self.extra_label.grid_remove()
@@ -92,7 +92,7 @@ class ToplevelWindow(customtkinter.CTkToplevel):
         self.packet_stats[proto]["count"] += 1
         self.packet_stats[proto]["ts"] = ts
 
-        # if no card exists → create one
+        # if no card exists, create one
         if proto not in self.packet_cards:
             card = customtkinter.CTkFrame(self.packet_view, corner_radius=10)
             card.pack(fill="x", padx=5, pady=5)
@@ -110,7 +110,6 @@ class ToplevelWindow(customtkinter.CTkToplevel):
 
             self.packet_cards[proto] = info_label
 
-        # update the displayed text (super fast)
         info = self.packet_stats[proto]
         self.packet_cards[proto].configure(
             text=f"Count: {info['count']}   Last packet: {info['ts']}"

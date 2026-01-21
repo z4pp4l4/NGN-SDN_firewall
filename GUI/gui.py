@@ -17,14 +17,14 @@ class App(customtkinter.CTk):
 
         self.listener_started = False
         self.listener_started_firewall = False
-        self.firewall_cmd_socket = None   # NEW: command channel GUI → Firewall
-        self.firewall_event_socket = None # existing event channel Firewall → GUI
+        self.firewall_cmd_socket = None   
+        self.firewall_event_socket = None 
 
 
         self.open_popups = {}
 
-        self.packet_stats = {}      # { "ARP": {count:int, ts:str}, ... }
-        self.packet_cards = {}      # card widgets per protocol
+        self.packet_stats = {}   
+        self.packet_cards = {}      
 
         self.ip_packet_stats = {}
 
@@ -68,7 +68,7 @@ class App(customtkinter.CTk):
     def connect_firewall_command_channel(self):
         """GUI listens for firewall COMMAND channel on port 6001."""
         server = socket.socket()
-        #server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
         server.bind(("0.0.0.0", 6001))
         server.listen(1)
 
@@ -102,7 +102,7 @@ class App(customtkinter.CTk):
         self.packet_stats[proto]["count"] += 1
         self.packet_stats[proto]["ts"] = ts
 
-        # if no card exists → create one
+        # if no card exists, create one
         if proto not in self.packet_cards:
             card = customtkinter.CTkFrame(self.packet_view, corner_radius=10)
             card.pack(fill="x", padx=5, pady=5)
@@ -120,7 +120,6 @@ class App(customtkinter.CTk):
 
             self.packet_cards[proto] = info_label
 
-        # update the displayed text (super fast)
         info = self.packet_stats[proto]
         self.packet_cards[proto].configure(
             text=f"Count: {info['count']}   Last packet: {info['ts']}"
@@ -167,9 +166,7 @@ class App(customtkinter.CTk):
         
         if not self.listener_started_firewall:
             threading.Thread(target=self.blocked_ips_listener_thread, daemon=True).start()
-
-        ###maybe here add another commuication thread to send commands to firewall
-        # NEW: Start GUI → Firewall command channel    
+ 
         threading.Thread(target=self.connect_firewall_command_channel, daemon=True).start()
 
         self.sniffer = subprocess.Popen(
@@ -179,7 +176,6 @@ class App(customtkinter.CTk):
             stderr=subprocess.PIPE,
             text=True
         )
-        print("waiting 15 seconds for the whole environment to boot up...")
         time.sleep(15)
         print("Starting ARP warm-up...")
         subprocess.run(["bash", "./ARP_warmup.sh"], cwd="../topology/")
@@ -191,7 +187,7 @@ class App(customtkinter.CTk):
             popup_window.load_packet_stats(self.ip_packet_stats[ip])
 
         if ip not in self.block_history or not self.block_history[ip]:
-            return  # No history → nothing to restore
+            return  # No history, nothing to restore
 
         last_event = self.block_history[ip][-1]
         event_type = last_event["type"]
@@ -214,7 +210,7 @@ class App(customtkinter.CTk):
                 # Block already expired
                 popup_window.show_unblocked_label("timeout")
             else:
-                # Block still active → restore countdown & label
+                # Block still active, restore countdown & label
                 popup_window.block_start_time = timestamp
                 popup_window.block_end_time = timestamp + duration
                 popup_window.set_block_info(remaining, reason)
@@ -245,7 +241,6 @@ class App(customtkinter.CTk):
         try:
             msg = json.dumps(event) + "\n"
             self.firewall_cmd_socket.sendall(msg.encode())
-            print("[GUI → Firewall] Sent:", msg.strip())
         except Exception as e:
             print(" Error sending command to firewall:", e)
 
@@ -312,7 +307,6 @@ class App(customtkinter.CTk):
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 if line.strip():
-                    print("[FIREWALL → GUI EVENT] Received:", line.strip())
                     self.firewall_event_queue.put(line.strip())
 
 
@@ -367,14 +361,12 @@ class App(customtkinter.CTk):
         while not self.firewall_event_queue.empty():
             raw = self.firewall_event_queue.get()
             event = json.loads(raw)
-            print("[GUI] Processing firewall event:", event)
             if event.get("type") == "block":
                 ip = event["ip"]
                 duration = event["duration"]
                 reason = event["reason"]
                 event["timestamp"] = time.time()
 
-                print(f"[GUI] IP {ip} BLOCKED for {duration}s due to {reason}")
                 self.scrollable_checkbox_frame.add_blocked_ip(ip, duration, reason)
 
                 if ip not in self.block_history:
@@ -393,7 +385,6 @@ class App(customtkinter.CTk):
                     duration = event["duration"]
                 reason = event["reason"]
 
-                print(f"[GUI] IP {ip} UNBLOCKED due to {reason}")
                 self.scrollable_checkbox_frame.remove_blocked_ip(ip, reason)
                 if ip in self.block_history:
                     self.block_history[ip].append(event)

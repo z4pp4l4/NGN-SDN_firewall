@@ -45,9 +45,6 @@ class MyOverview(customtkinter.CTkFrame):
         self.port_entry = customtkinter.CTkEntry(self.fields_frame, placeholder_text="Port number")
 
         self.protocol_var = customtkinter.StringVar(value="TCP")
-        self.protocol_menu = customtkinter.CTkOptionMenu(
-            self.fields_frame, values=["TCP","UDP"], variable=self.protocol_var
-        )
 
 
         # Action button
@@ -109,7 +106,6 @@ class MyOverview(customtkinter.CTkFrame):
 
         # Commands requiring PORT + PROTOCOL (+ optional direction)
         elif cmd in ("block_port","unblock_port"):
-            self.protocol_menu.grid(row=0, column=0, sticky="ew", pady=5, columnspan=2)
             self.port_entry.grid(row=1, column=0, sticky="ew", pady=5, columnspan=2)
 
 
@@ -123,7 +119,7 @@ class MyOverview(customtkinter.CTkFrame):
         if cmd in ("block_ip","unblock_ip","static_block_ip","static_unblock_ip"):
             ip = self.ip_entry.get().strip()
             if not ip:
-                print("❌ Missing IP")
+                print("Missing IP")
                 return
             event["ip"] = ip
 
@@ -132,20 +128,19 @@ class MyOverview(customtkinter.CTkFrame):
                 if dur.isdigit():
                     event["duration"] = int(dur)
                 else:
-                    print("⚠ No duration provided, defaulting to 10s")
+                    print("No duration provided, defaulting to 10s")
                     event["duration"] = 10
 
         elif cmd in ("block_port","unblock_port"):
             proto = self.protocol_var.get()
             port_text = self.port_entry.get().strip()
             if not port_text.isdigit():
-                print("❌ Invalid port")
+                print("Invalid port")
                 return
 
             event["protocol"] = proto
             event["port"] = int(port_text)
 
-        print("[GUI → Firewall] Sending:", event)
         self.app_ref.send_firewall_command(event)
 
 
@@ -238,7 +233,6 @@ class MyOverview(customtkinter.CTkFrame):
                 data["label"].configure(
                     text=f"{ip} was UNBLOCKED due to {reason}", text_color="green"
                 )
-                # Optionally, remove from list after some time
                 continue
 
             elapsed = now - data["timestamp"]
