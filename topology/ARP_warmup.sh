@@ -8,7 +8,7 @@ echo
 echo "[INFO] Warming up ARP caches..."
 for i in 1 2 3; do
   for j in 1 2 3 4 5 6 7; do
-      kathara exec h$i -- ping -c1 -W1 192.168.20.$((j+1)) >/dev/null 2>&1
+      kathara exec h$i -- ping -c1 -W1 192.168.20.$j >/dev/null 2>&1
   done
   echo "h$i completed..."
 done
