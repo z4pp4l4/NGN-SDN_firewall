@@ -46,6 +46,8 @@ def connect_to_gui_channel(port, desc):
             print(f"[FIREWALL] GUI {desc} not ready, retrying...")
             time.sleep(1)
 
+#our firewall is totally disconnected from the switch, it's controller-based (control-plane). The sdn controller programs OpenFlow rules and stores them on the switch
+# each time the switch receives a packet, it goes to verify the flow match in the flow table, if no matching flow entry, the table miss-rule is applied, the packet is forwarded to the controller as a PacketIn msg.
 
 class SDNFirewall(app_manager.RyuApp):
 
@@ -98,6 +100,7 @@ class SDNFirewall(app_manager.RyuApp):
         self.port_scan_window = 30
 
 
+    #controller -> switch: installs flow rules dynamically
     def add_flow(self, datapath, priority, match, actions, buffer_id=None, idle_timeout=0, hard_timeout=0):
         """Add flow with optional timeout"""
         ofproto = datapath.ofproto
@@ -638,6 +641,9 @@ class SDNFirewall(app_manager.RyuApp):
         elif arp_pkt.opcode == arp.ARP_REPLY:
             self.logger.info("Received ARP reply: %s is at %s", src_ip, src_mac)
 
+    #this portion is called automatically by the ryu's event loop anytime the switch sends a PacketIn msg when it's in a "fully connected and operational state (=MAIN_DISPATCHER)"
+    #here the packet is parsed, there are security checks, routing decisions and policy enforcement
+    
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
